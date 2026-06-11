@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-color: #E8A0BF;
+  --primary-hover: #D4899F;
+  --primary-light: #F8D7E4;
+  --bg-color: #FFF8F0;
+  --text-color: #2D3436;
+  --card-bg: #F8D7E4;
+  --warning-color: #E74C3C;
+  --success-color: #27AE60;
+  --info-color: #3498DB;
+  --border-color: #F0C6D8;
+
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.p-button.p-button-primary,
+.p-button.p-component {
+  background-color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.p-button.p-button-primary:hover,
+.p-button.p-component:hover {
+  background-color: var(--primary-hover) !important;
+  border-color: var(--primary-hover) !important;
+}
+
+.p-datatable .p-datatable-thead > tr > th {
+  background-color: var(--primary-light) !important;
+  color: var(--text-color) !important;
+}
+
+.p-dialog .p-dialog-header {
+  background-color: var(--primary-light) !important;
+}
+
+.p-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
+  color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.p-inputtext:focus,
+.p-calendar:focus-within .p-inputtext {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 0.2rem rgba(232, 160, 191, 0.25) !important;
+}
+
+.p-dropdown:not(.p-disabled).p-focus {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 0.2rem rgba(232, 160, 191, 0.25) !important;
+}
