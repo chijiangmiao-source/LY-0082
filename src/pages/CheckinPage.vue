@@ -63,13 +63,17 @@
       <Dialog v-model:visible="rejectDialogVisible" header="拒绝原因" :modal="true" :style="{ width: '400px' }">
         <div class="dialog-form">
           <div class="field">
-            <label>请输入拒绝原因</label>
-            <InputText v-model="rejectReason" placeholder="请输入拒绝原因" />
+            <label>请输入拒绝原因 <span class="required">*</span></label>
+            <textarea v-model="rejectReason" class="reject-textarea" :class="{ 'textarea-invalid': rejectError }" placeholder="请输入拒绝原因（2-200字）" rows="3" maxlength="200" @input="rejectError = ''" />
+            <div class="field-footer">
+              <small v-if="rejectError" class="p-error">{{ rejectError }}</small>
+              <small class="char-count" :class="{ 'count-warning': rejectReason.length > 180 }">{{ rejectReason.length }}/200</small>
+            </div>
           </div>
         </div>
         <template #footer>
           <Button label="取消" severity="secondary" @click="rejectDialogVisible = false" />
-          <Button label="确认拒绝" severity="danger" @click="handleReject" />
+          <Button label="确认拒绝" severity="danger" @click="handleReject" :disabled="rejectReason.trim().length < 2 || rejectReason.trim().length > 200" />
         </template>
       </Dialog>
     </div>
@@ -90,6 +94,7 @@ const searchResults = ref<any[]>([])
 const searched = ref(false)
 const rejectDialogVisible = ref(false)
 const rejectReason = ref('')
+const rejectError = ref('')
 const currentApt = ref<any>(null)
 
 function statusLabel(status: string) {
@@ -123,6 +128,7 @@ async function handleSearch() {
 function showRejectDialog(apt: any) {
   currentApt.value = apt
   rejectReason.value = ''
+  rejectError.value = ''
   rejectDialogVisible.value = true
 }
 
@@ -136,13 +142,24 @@ async function handleCheckin(apt: any) {
   }
 }
 
-async function handleReject() {
-  if (!rejectReason.value.trim()) {
-    alert('请输入拒绝原因')
-    return
+function validateReject(): boolean {
+  const reason = rejectReason.value.trim()
+  if (reason.length < 2) {
+    rejectError.value = '拒绝原因至少2个字符'
+    return false
   }
+  if (reason.length > 200) {
+    rejectError.value = '拒绝原因不能超过200字'
+    return false
+  }
+  rejectError.value = ''
+  return true
+}
+
+async function handleReject() {
+  if (!validateReject()) return
   try {
-    await visitApi.checkin({ appointment_id: currentApt.value.id, reject_reason: rejectReason.value })
+    await visitApi.checkin({ appointment_id: currentApt.value.id, reject_reason: rejectReason.value.trim() })
     rejectDialogVisible.value = false
     alert('已拒绝')
     await handleSearch()
@@ -330,5 +347,48 @@ async function handleReject() {
 
 .dialog-form .field .p-inputtext {
   width: 100%;
+}
+
+.required {
+  color: #E74C3C;
+}
+
+.reject-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.reject-textarea:focus {
+  outline: none;
+  border-color: #E8A0BF;
+  box-shadow: 0 0 0 2px rgba(232, 160, 191, 0.2);
+}
+
+.reject-textarea.textarea-invalid {
+  border-color: #E74C3C;
+}
+
+.field-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.char-count {
+  color: #999;
+  font-size: 12px;
+}
+
+.char-count.count-warning {
+  color: #E74C3C;
+  font-weight: 500;
 }
 </style>

@@ -40,12 +40,15 @@ async def checkin(request: Request) -> JSONResponse:
                 target_room_id = resident.room_id
 
         if reject_reason:
+            reason_len = len(reject_reason.strip())
+            if reason_len < 2 or reason_len > 200:
+                return JSONResponse({"detail": "拒绝原因长度需在2-200字之间"}, status_code=400)
             visit = Visit(
                 appointment_id=appointment_id,
                 room_id=target_room_id,
                 check_in_time=now,
                 release_status="rejected",
-                reject_reason=reject_reason,
+                reject_reason=reject_reason.strip(),
             )
             session.add(visit)
             appointment.status = "rejected"
@@ -56,7 +59,7 @@ async def checkin(request: Request) -> JSONResponse:
                 "room_id": visit.room_id,
                 "check_in_time": visit.check_in_time.isoformat() if visit.check_in_time else None,
                 "release_status": visit.release_status,
-                "reject_reason": reject_reason,
+                "reject_reason": reject_reason.strip(),
             }, status_code=201)
 
         bl_result = await session.execute(select(Blacklist).where(Blacklist.visitor_id_card == visitor_id_card))

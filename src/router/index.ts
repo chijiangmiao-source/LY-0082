@@ -52,9 +52,7 @@ const routes = [
   },
   {
     path: '/statistics',
-    name: 'statistics',
-    component: () => import('@/pages/StatisticsPage.vue'),
-    meta: { requiresAuth: true },
+    redirect: '/',
   },
 ]
 
@@ -63,10 +61,16 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
-  if (to.meta.requiresAuth !== false && !authStore.isLoggedIn) {
-    next('/login')
+  await authStore.initAuth()
+
+  if (to.meta.requiresAuth !== false) {
+    if (!authStore.isLoggedIn) {
+      next('/login')
+    } else {
+      next()
+    }
   } else if (to.path === '/login' && authStore.isLoggedIn) {
     next('/')
   } else {

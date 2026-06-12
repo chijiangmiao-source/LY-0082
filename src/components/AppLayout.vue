@@ -52,7 +52,6 @@ import {
   ShieldCheck,
   DoorOpen,
   Ban,
-  BarChart3,
   Heart,
   User,
   LogOut,
@@ -65,14 +64,13 @@ const router = useRouter()
 const collapsed = ref(false)
 
 const navItems = [
-  { path: '/', label: '仪表盘', icon: LayoutDashboard },
+  { path: '/', label: '统计总览', icon: LayoutDashboard },
   { path: '/rooms', label: '楼层房间', icon: Building2 },
   { path: '/residents', label: '住户档案', icon: Users },
   { path: '/appointments', label: '探视预约', icon: CalendarCheck },
   { path: '/checkin', label: '前台核验', icon: ShieldCheck },
   { path: '/checkout', label: '离开登记', icon: DoorOpen },
   { path: '/blacklist', label: '黑名单', icon: Ban },
-  { path: '/statistics', label: '探视统计', icon: BarChart3 },
 ]
 
 function handleLogout() {
