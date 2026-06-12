@@ -7,7 +7,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from database import async_session
-from models import Appointment, Room, Visit, Floor
+from models import Appointment, Room, Visit, Floor, VisitCode
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +65,53 @@ async def dashboard(request: Request) -> JSONResponse:
             if active_result.scalar() >= room.max_visitors:
                 overcapacity_count += 1
 
+        whitelist_visit_count = 0
+        if visit_count > 0:
+            whitelist_visit_result = await session.execute(
+                select(func.count()).select_from(Visit)
+                .join(Appointment, Visit.appointment_id == Appointment.id)
+                .where(
+                    and_(
+                        Visit.check_in_time >= today_start,
+                        Visit.release_status == "released",
+                        Appointment.is_whitelist_visitor == True,
+                    )
+                )
+            )
+            whitelist_visit_count = whitelist_visit_result.scalar()
+        whitelist_ratio = round((whitelist_visit_count / visit_count) * 100, 1) if visit_count > 0 else 0
+
+        visit_code_released_result = await session.execute(
+            select(func.count()).select_from(Visit).where(
+                and_(
+                    Visit.check_in_time >= today_start,
+                    Visit.release_status == "released",
+                    Visit.visit_code_id.isnot(None),
+                )
+            )
+        )
+        visit_code_released_count = visit_code_released_result.scalar()
+
+        visit_code_rejected_result = await session.execute(
+            select(func.count()).select_from(Visit).where(
+                and_(
+                    Visit.check_in_time >= today_start,
+                    Visit.release_status == "rejected",
+                    Visit.visit_code_id.isnot(None),
+                )
+            )
+        )
+        visit_code_rejected_count = visit_code_rejected_result.scalar()
+
     return JSONResponse({
         "today_visits": visit_count,
         "active_visitors": active_visitors,
         "interception_count": interception_count,
         "overcapacity_count": overcapacity_count,
+        "whitelist_visit_count": whitelist_visit_count,
+        "whitelist_ratio": whitelist_ratio,
+        "visit_code_released_count": visit_code_released_count,
+        "visit_code_rejected_count": visit_code_rejected_count,
     })
 
 

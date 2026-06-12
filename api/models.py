@@ -66,6 +66,33 @@ class Blacklist(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class VisitorWhitelist(Base):
+    __tablename__ = "visitor_whitelist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    resident_id: Mapped[int] = mapped_column(Integer, ForeignKey("residents.id"), nullable=False)
+    visitor_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    visitor_phone: Mapped[str] = mapped_column(String(20), nullable=True)
+    visitor_id_card: Mapped[str] = mapped_column(String(18), nullable=True)
+    visitor_relation: Mapped[str] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    resident: Mapped["Resident"] = relationship()
+
+
+class VisitCode(Base):
+    __tablename__ = "visit_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
+    appointment_id: Mapped[int] = mapped_column(Integer, ForeignKey("appointments.id"), nullable=False)
+    is_used: Mapped[bool] = mapped_column(default=False)
+    used_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    appointment: Mapped["Appointment"] = relationship(back_populates="visit_code")
+
+
 class Appointment(Base):
     __tablename__ = "appointments"
 
@@ -76,15 +103,17 @@ class Appointment(Base):
     visitor_phone: Mapped[str] = mapped_column(String(20), nullable=True)
     visitor_id_card: Mapped[str] = mapped_column(String(18), nullable=False)
     visitor_relation: Mapped[str] = mapped_column(String(20), nullable=True)
+    is_whitelist_visitor: Mapped[bool] = mapped_column(default=False)
     scheduled_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     scheduled_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(
-        Enum("pending", "checked_in", "checked_out", "cancelled", "rejected", name="appointment_status"),
+        Enum("pending", "approved", "checked_in", "checked_out", "cancelled", "rejected", name="appointment_status"),
         default="pending",
     )
 
     resident: Mapped["Resident"] = relationship(back_populates="appointments")
     visits: Mapped[list["Visit"]] = relationship(back_populates="appointment")
+    visit_code: Mapped["VisitCode"] = relationship(back_populates="appointment", uselist=False)
 
 
 class Visit(Base):
@@ -93,6 +122,7 @@ class Visit(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     appointment_id: Mapped[int] = mapped_column(Integer, ForeignKey("appointments.id"), nullable=False)
     room_id: Mapped[int] = mapped_column(Integer, ForeignKey("rooms.id"), nullable=False)
+    visit_code_id: Mapped[int] = mapped_column(Integer, ForeignKey("visit_codes.id"), nullable=True)
     check_in_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     check_out_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     release_status: Mapped[str] = mapped_column(Enum("released", "rejected", name="release_status"), nullable=False)
@@ -100,3 +130,4 @@ class Visit(Base):
 
     appointment: Mapped["Appointment"] = relationship(back_populates="visits")
     room: Mapped["Room"] = relationship()
+    visit_code: Mapped["VisitCode"] = relationship()

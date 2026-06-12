@@ -2,7 +2,98 @@
   <AppLayout>
     <div class="checkin-page">
       <h2 class="page-title">前台核验</h2>
-      <div class="search-section">
+
+      <div class="search-tabs">
+        <div class="tab" :class="{ active: activeTab === 'code' }" @click="activeTab = 'code'">
+          <QrCode :size="18" />
+          <span>探视码核验</span>
+        </div>
+        <div class="tab" :class="{ active: activeTab === 'search' }" @click="activeTab = 'search'">
+          <Search :size="18" />
+          <span>预约搜索</span>
+        </div>
+      </div>
+
+      <div v-show="activeTab === 'code'" class="code-verify-section">
+        <div class="code-input-box">
+          <div class="code-input-title">请输入或扫描探视码</div>
+          <div class="code-input-row">
+            <InputText
+              v-model="codeInput"
+              placeholder="请输入8位探视码（如：A1B2C3D4）"
+              class="code-input"
+              @keyup.enter="handleCodeQuery"
+              maxlength="8"
+            />
+            <Button label="查询" icon="pi pi-search" @click="handleCodeQuery" />
+          </div>
+          <div class="code-input-hint">探视码为8位大写字母数字组合，审核通过后由系统生成</div>
+        </div>
+
+        <div v-if="codeResult" class="code-result-card" :class="getCodeCardClass(codeResult)">
+          <div class="card-header">
+            <div class="apt-no">预约编号：{{ codeResult.appointment_no }}</div>
+            <div class="code-badge" :class="{ used: codeResult.visit_code_used }">
+              码：{{ codeResult.visit_code }}
+            </div>
+            <span class="status-badge" :class="codeResult.status">{{ statusLabel(codeResult.status) }}</span>
+          </div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">住户姓名</span>
+                <span class="info-value">{{ codeResult.resident_name }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">房间号</span>
+                <span class="info-value">{{ codeResult.room_number }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">访客姓名</span>
+                <span class="info-value">{{ codeResult.visitor_name }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">关系</span>
+                <span class="info-value">{{ codeResult.visitor_relation }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">访客手机</span>
+                <span class="info-value">{{ codeResult.visitor_phone || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">白名单访客</span>
+                <span class="info-value">
+                  <span v-if="codeResult.is_whitelist_visitor" class="whitelist-yes">是</span>
+                  <span v-else>否</span>
+                </span>
+              </div>
+              <div class="info-item full">
+                <span class="info-label">预约开始</span>
+                <span class="info-value">{{ codeResult.scheduled_start }}</span>
+              </div>
+              <div class="info-item full">
+                <span class="info-label">预约结束</span>
+                <span class="info-value">{{ codeResult.scheduled_end }}</span>
+              </div>
+            </div>
+            <div v-if="codeResult.warnings && codeResult.warnings.length" class="warnings">
+              <div v-for="(w, i) in codeResult.warnings" :key="i" class="warning-item">
+                <AlertTriangle :size="16" color="#E74C3C" />
+                <span>{{ w }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="card-actions" v-if="canCheckinByCode(codeResult)">
+            <Button label="快速放行" icon="pi pi-check" severity="success" @click="handleCodeCheckin" />
+            <Button label="拒绝" icon="pi pi-times" severity="danger" @click="showCodeRejectDialog" />
+          </div>
+        </div>
+
+        <div v-else-if="codeSearched && !codeError" class="empty-state">未找到相关预约</div>
+        <div v-else-if="codeError" class="empty-state error">{{ codeError }}</div>
+      </div>
+
+      <div v-show="activeTab === 'search'" class="search-section">
         <div class="search-bar">
           <span class="p-input-icon-left">
             <i class="pi pi-search" />
@@ -10,55 +101,58 @@
           </span>
           <Button label="搜索" icon="pi pi-search" @click="handleSearch" />
         </div>
-      </div>
 
-      <div v-if="searchResults.length" class="results-section">
-        <div v-for="apt in searchResults" :key="apt.id" class="appointment-card" :class="getCardClass(apt)">
-          <div class="card-header">
-            <div class="apt-no">预约编号：{{ apt.appointment_no }}</div>
-            <span class="status-badge" :class="apt.status">{{ statusLabel(apt.status) }}</span>
-          </div>
-          <div class="card-body">
-            <div class="info-grid">
-              <div class="info-item">
-                <span class="info-label">住户姓名</span>
-                <span class="info-value">{{ apt.resident_name }}</span>
+        <div v-if="searchResults.length" class="results-section">
+          <div v-for="apt in searchResults" :key="apt.id" class="appointment-card" :class="getCardClass(apt)">
+            <div class="card-header">
+              <div class="apt-no">预约编号：{{ apt.appointment_no }}</div>
+              <div v-if="apt.visit_code" class="code-badge" :class="{ used: apt.visit_code_used }">
+                码：{{ apt.visit_code }}
               </div>
-              <div class="info-item">
-                <span class="info-label">访客姓名</span>
-                <span class="info-value">{{ apt.visitor_name }}</span>
+              <span class="status-badge" :class="apt.status">{{ statusLabel(apt.status) }}</span>
+            </div>
+            <div class="card-body">
+              <div class="info-grid">
+                <div class="info-item">
+                  <span class="info-label">住户姓名</span>
+                  <span class="info-value">{{ apt.resident_name }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">访客姓名</span>
+                  <span class="info-value">{{ apt.visitor_name }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">关系</span>
+                  <span class="info-value">{{ apt.visitor_relation }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">访客手机</span>
+                  <span class="info-value">{{ apt.visitor_phone || '-' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">预约开始</span>
+                  <span class="info-value">{{ apt.scheduled_start }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">预约结束</span>
+                  <span class="info-value">{{ apt.scheduled_end }}</span>
+                </div>
               </div>
-              <div class="info-item">
-                <span class="info-label">关系</span>
-                <span class="info-value">{{ apt.visitor_relation }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">访客手机</span>
-                <span class="info-value">{{ apt.visitor_phone || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">预约开始</span>
-                <span class="info-value">{{ apt.scheduled_start }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">预约结束</span>
-                <span class="info-value">{{ apt.scheduled_end }}</span>
+              <div v-if="apt.warnings && apt.warnings.length" class="warnings">
+                <div v-for="(w, i) in apt.warnings" :key="i" class="warning-item">
+                  <AlertTriangle :size="16" color="#E74C3C" />
+                  <span>{{ w }}</span>
+                </div>
               </div>
             </div>
-            <div v-if="apt.warnings && apt.warnings.length" class="warnings">
-              <div v-for="(w, i) in apt.warnings" :key="i" class="warning-item">
-                <AlertTriangle :size="16" color="#E74C3C" />
-                <span>{{ w }}</span>
-              </div>
+            <div class="card-actions" v-if="apt.status === 'pending' || apt.status === 'approved'">
+              <Button label="放行" icon="pi pi-check" severity="success" @click="handleCheckin(apt)" />
+              <Button label="拒绝" icon="pi pi-times" severity="danger" @click="showRejectDialog(apt)" />
             </div>
-          </div>
-          <div class="card-actions" v-if="apt.status === 'pending'">
-            <Button label="放行" icon="pi pi-check" severity="success" @click="handleCheckin(apt)" />
-            <Button label="拒绝" icon="pi pi-times" severity="danger" @click="showRejectDialog(apt)" />
           </div>
         </div>
+        <div v-else-if="searched" class="empty-state">未找到相关预约</div>
       </div>
-      <div v-else-if="searched" class="empty-state">未找到相关预约</div>
 
       <Dialog v-model:visible="rejectDialogVisible" header="拒绝原因" :modal="true" :style="{ width: '400px' }">
         <div class="dialog-form">
@@ -84,10 +178,16 @@
 import { ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { appointmentApi, visitApi } from '@/api'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle, Search, QrCode } from 'lucide-vue-next'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+
+const activeTab = ref<'code' | 'search'>('code')
+const codeInput = ref('')
+const codeResult = ref<any>(null)
+const codeSearched = ref(false)
+const codeError = ref('')
 
 const searchQuery = ref('')
 const searchResults = ref<any[]>([])
@@ -96,16 +196,60 @@ const rejectDialogVisible = ref(false)
 const rejectReason = ref('')
 const rejectError = ref('')
 const currentApt = ref<any>(null)
+const rejectMode = ref<'code' | 'normal'>('normal')
 
 function statusLabel(status: string) {
-  const map: Record<string, string> = { pending: '待处理', checked_in: '已签到', checked_out: '已签退', cancelled: '已取消', rejected: '已拒绝' }
+  const map: Record<string, string> = { pending: '待审核', approved: '已通过', checked_in: '已签到', checked_out: '已签退', cancelled: '已取消', rejected: '已拒绝' }
   return map[status] || status
 }
 
 function getCardClass(apt: any) {
-  if (apt.status !== 'pending') return 'card-disabled'
+  if (!(apt.status === 'pending' || apt.status === 'approved')) return 'card-disabled'
   if (apt.warnings && apt.warnings.length) return 'card-warning'
   return 'card-ok'
+}
+
+function getCodeCardClass(result: any) {
+  if (!canCheckinByCode(result)) return 'card-disabled'
+  if (result.warnings && result.warnings.length) return 'card-warning'
+  return 'card-ok'
+}
+
+function canCheckinByCode(result: any) {
+  return result.status === 'approved' && !result.visit_code_used
+}
+
+async function handleCodeQuery() {
+  const code = codeInput.value.trim().toUpperCase()
+  if (!code) return
+  codeSearched.value = true
+  codeError.value = ''
+  codeResult.value = null
+  try {
+    codeResult.value = await visitApi.getByCode(code)
+  } catch (e: any) {
+    codeError.value = e.message || '查询失败'
+  }
+}
+
+async function handleCodeCheckin() {
+  if (!codeResult.value) return
+  try {
+    await visitApi.checkinByCode({ code: codeResult.value.visit_code })
+    alert('放行成功')
+    codeSearched.value = false
+    codeInput.value = ''
+    codeResult.value = null
+  } catch (e: any) {
+    alert(e.message || '操作失败')
+  }
+}
+
+function showCodeRejectDialog() {
+  rejectMode.value = 'code'
+  rejectReason.value = ''
+  rejectError.value = ''
+  rejectDialogVisible.value = true
 }
 
 async function handleSearch() {
@@ -126,6 +270,7 @@ async function handleSearch() {
 }
 
 function showRejectDialog(apt: any) {
+  rejectMode.value = 'normal'
   currentApt.value = apt
   rejectReason.value = ''
   rejectError.value = ''
@@ -159,10 +304,19 @@ function validateReject(): boolean {
 async function handleReject() {
   if (!validateReject()) return
   try {
-    await visitApi.checkin({ appointment_id: currentApt.value.id, reject_reason: rejectReason.value.trim() })
-    rejectDialogVisible.value = false
-    alert('已拒绝')
-    await handleSearch()
+    if (rejectMode.value === 'code' && codeResult.value) {
+      await visitApi.checkinByCode({ code: codeResult.value.visit_code, reject_reason: rejectReason.value.trim() })
+      rejectDialogVisible.value = false
+      alert('已拒绝')
+      codeSearched.value = false
+      codeInput.value = ''
+      codeResult.value = null
+    } else if (currentApt.value) {
+      await visitApi.checkin({ appointment_id: currentApt.value.id, reject_reason: rejectReason.value.trim() })
+      rejectDialogVisible.value = false
+      alert('已拒绝')
+      await handleSearch()
+    }
   } catch (e: any) {
     alert(e.message || '操作失败')
   }
@@ -181,6 +335,101 @@ async function handleReject() {
   margin: 0 0 24px;
 }
 
+.search-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #E5E7EB;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  cursor: pointer;
+  color: #6B7280;
+  font-weight: 500;
+  font-size: 14px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  color: #D4899F;
+}
+
+.tab.active {
+  color: #D4899F;
+  border-bottom-color: #D4899F;
+}
+
+.code-verify-section {
+  margin-bottom: 24px;
+}
+
+.code-input-box {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.code-input-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2D3436;
+  margin-bottom: 16px;
+}
+
+.code-input-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.code-input {
+  width: 360px;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.code-input-hint {
+  font-size: 12px;
+  color: #999;
+}
+
+.code-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #4F46E5;
+  background: #EEF2FF;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.code-badge.used {
+  color: #6B7280;
+  background: #F3F4F6;
+  text-decoration: line-through;
+}
+
+.whitelist-yes {
+  color: #D97706;
+  font-weight: 500;
+}
+
 .search-section {
   margin-bottom: 24px;
 }
@@ -189,6 +438,7 @@ async function handleReject() {
   display: flex;
   gap: 12px;
   align-items: center;
+  margin-bottom: 24px;
 }
 
 .search-bar :deep(.p-input-icon-left) {
@@ -213,7 +463,8 @@ async function handleReject() {
   gap: 16px;
 }
 
-.appointment-card {
+.appointment-card,
+.code-result-card {
   background: white;
   border-radius: 12px;
   padding: 20px;
@@ -221,17 +472,15 @@ async function handleReject() {
   border-left: 4px solid #27AE60;
 }
 
-.appointment-card.card-warning {
+.appointment-card.card-warning,
+.code-result-card.card-warning {
   border-left-color: #E74C3C;
 }
 
-.appointment-card.card-disabled {
+.appointment-card.card-disabled,
+.code-result-card.card-disabled {
   border-left-color: #999;
   opacity: 0.7;
-}
-
-.appointment-card.card-ok {
-  border-left-color: #27AE60;
 }
 
 .card-header {
@@ -239,6 +488,8 @@ async function handleReject() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .apt-no {
@@ -257,6 +508,11 @@ async function handleReject() {
 .status-badge.pending {
   background: #FEF3C7;
   color: #D97706;
+}
+
+.status-badge.approved {
+  background: #DBEAFE;
+  color: #2563EB;
 }
 
 .status-badge.checked_in {
@@ -290,6 +546,10 @@ async function handleReject() {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.info-item.full {
+  grid-column: span 3;
 }
 
 .info-label {
@@ -332,6 +592,10 @@ async function handleReject() {
   text-align: center;
   padding: 40px;
   color: #999;
+}
+
+.empty-state.error {
+  color: #E74C3C;
 }
 
 .dialog-form .field {

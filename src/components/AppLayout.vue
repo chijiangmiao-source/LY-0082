@@ -57,6 +57,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  BookmarkCheck,
 } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
@@ -67,6 +68,7 @@ const navItems = [
   { path: '/', label: '统计总览', icon: LayoutDashboard },
   { path: '/rooms', label: '楼层房间', icon: Building2 },
   { path: '/residents', label: '住户档案', icon: Users },
+  { path: '/whitelist', label: '访客白名单', icon: BookmarkCheck },
   { path: '/appointments', label: '探视预约', icon: CalendarCheck },
   { path: '/checkin', label: '前台核验', icon: ShieldCheck },
   { path: '/checkout', label: '离开登记', icon: DoorOpen },

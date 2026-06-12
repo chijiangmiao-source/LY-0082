@@ -1,5 +1,6 @@
 import logging
 import random
+import string
 import time
 from datetime import datetime, timezone
 
@@ -9,7 +10,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from database import async_session
-from models import Appointment, Blacklist, Resident, Room, Visit
+from models import Appointment, Blacklist, Resident, Room, Visit, VisitorWhitelist, VisitCode
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,11 @@ def generate_appointment_no() -> str:
     ts = int(time.time())
     rand = random.randint(0, 9999)
     return f"VT{ts}{rand:04d}"
+
+
+def generate_visit_code() -> str:
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(8))
 
 
 async def list_appointments(request: Request) -> JSONResponse:
@@ -49,6 +55,7 @@ async def list_appointments(request: Request) -> JSONResponse:
 
         appointment_ids = [a.id for a in appointments]
         visits_map = {}
+        visit_codes_map = {}
         if appointment_ids:
             from sqlalchemy import desc
             visit_result = await session.execute(
@@ -58,6 +65,12 @@ async def list_appointments(request: Request) -> JSONResponse:
             for v in visit_result.scalars().all():
                 if v.appointment_id not in visits_map:
                     visits_map[v.appointment_id] = v
+
+            vc_result = await session.execute(
+                select(VisitCode).where(VisitCode.appointment_id.in_(appointment_ids))
+            )
+            for vc in vc_result.scalars().all():
+                visit_codes_map[vc.appointment_id] = vc
 
     return JSONResponse([
         {
@@ -69,9 +82,12 @@ async def list_appointments(request: Request) -> JSONResponse:
             "visitor_phone": a.visitor_phone,
             "visitor_id_card": a.visitor_id_card,
             "visitor_relation": a.visitor_relation,
+            "is_whitelist_visitor": a.is_whitelist_visitor,
             "scheduled_start": a.scheduled_start.isoformat() if a.scheduled_start else None,
             "scheduled_end": a.scheduled_end.isoformat() if a.scheduled_end else None,
             "status": a.status,
+            "visit_code": visit_codes_map.get(a.id).code if visit_codes_map.get(a.id) else None,
+            "visit_code_used": visit_codes_map.get(a.id).is_used if visit_codes_map.get(a.id) else False,
             "release_status": visits_map.get(a.id).release_status if visits_map.get(a.id) else None,
             "reject_reason": visits_map.get(a.id).reject_reason if visits_map.get(a.id) else None,
             "check_in_time": visits_map.get(a.id).check_in_time.isoformat() if visits_map.get(a.id) and visits_map.get(a.id).check_in_time else None,
@@ -89,6 +105,7 @@ async def create_appointment(request: Request) -> JSONResponse:
     visitor_relation = body.get("visitor_relation", "").strip()
     scheduled_start_str = body.get("scheduled_start", "")
     scheduled_end_str = body.get("scheduled_end", "")
+    whitelist_id = body.get("whitelist_id")
 
     if not resident_id:
         return JSONResponse({"detail": "请选择住户"}, status_code=400)
@@ -120,6 +137,29 @@ async def create_appointment(request: Request) -> JSONResponse:
         if not room:
             return JSONResponse({"detail": "住户房间不存在"}, status_code=400)
 
+        is_whitelist = False
+        if whitelist_id:
+            wl_result = await session.execute(
+                select(VisitorWhitelist).where(
+                    VisitorWhitelist.id == int(whitelist_id),
+                    VisitorWhitelist.resident_id == resident_id,
+                )
+            )
+            wl_entry = wl_result.scalar_one_or_none()
+            if wl_entry:
+                is_whitelist = True
+                if not visitor_id_card and wl_entry.visitor_id_card:
+                    visitor_id_card = wl_entry.visitor_id_card
+        elif visitor_id_card:
+            wl_result = await session.execute(
+                select(VisitorWhitelist).where(
+                    VisitorWhitelist.resident_id == resident_id,
+                    VisitorWhitelist.visitor_id_card == visitor_id_card,
+                )
+            )
+            if wl_result.scalar_one_or_none():
+                is_whitelist = True
+
         if visitor_id_card:
             bl_result = await session.execute(select(Blacklist).where(Blacklist.visitor_id_card == visitor_id_card))
             if bl_result.scalar_one_or_none():
@@ -129,7 +169,7 @@ async def create_appointment(request: Request) -> JSONResponse:
             select(func.count()).select_from(Appointment).join(Resident).where(
                 and_(
                     Resident.room_id == room_id,
-                    Appointment.status.in_(["pending", "checked_in"]),
+                    Appointment.status.in_(["pending", "approved", "checked_in"]),
                     Appointment.scheduled_start < scheduled_end,
                     Appointment.scheduled_end > scheduled_start,
                 )
@@ -160,6 +200,7 @@ async def create_appointment(request: Request) -> JSONResponse:
             visitor_phone=body.get("visitor_phone"),
             visitor_id_card=visitor_id_card,
             visitor_relation=visitor_relation,
+            is_whitelist_visitor=is_whitelist,
             scheduled_start=scheduled_start,
             scheduled_end=scheduled_end,
         )
@@ -175,6 +216,7 @@ async def create_appointment(request: Request) -> JSONResponse:
         "visitor_phone": appointment.visitor_phone,
         "visitor_id_card": appointment.visitor_id_card,
         "visitor_relation": appointment.visitor_relation,
+        "is_whitelist_visitor": appointment.is_whitelist_visitor,
         "scheduled_start": appointment.scheduled_start.isoformat() if appointment.scheduled_start else None,
         "scheduled_end": appointment.scheduled_end.isoformat() if appointment.scheduled_end else None,
         "status": appointment.status,
@@ -204,10 +246,33 @@ async def update_appointment(request: Request) -> JSONResponse:
         if "scheduled_end" in body:
             appointment.scheduled_end = body["scheduled_end"]
         if "status" in body:
+            old_status = appointment.status
             appointment.status = body["status"]
+            if old_status != "approved" and body["status"] == "approved":
+                existing_vc = await session.execute(
+                    select(VisitCode).where(VisitCode.appointment_id == appointment_id)
+                )
+                if not existing_vc.scalar_one_or_none():
+                    code = generate_visit_code()
+                    for _ in range(5):
+                        check = await session.execute(select(VisitCode).where(VisitCode.code == code))
+                        if not check.scalar_one_or_none():
+                            break
+                        code = generate_visit_code()
+                    visit_code = VisitCode(
+                        code=code,
+                        appointment_id=appointment_id,
+                        is_used=False,
+                    )
+                    session.add(visit_code)
 
         await session.commit()
         await session.refresh(appointment)
+
+        vc_result = await session.execute(
+            select(VisitCode).where(VisitCode.appointment_id == appointment_id)
+        )
+        visit_code = vc_result.scalar_one_or_none()
 
     return JSONResponse({
         "id": appointment.id,
@@ -217,9 +282,11 @@ async def update_appointment(request: Request) -> JSONResponse:
         "visitor_phone": appointment.visitor_phone,
         "visitor_id_card": appointment.visitor_id_card,
         "visitor_relation": appointment.visitor_relation,
+        "is_whitelist_visitor": appointment.is_whitelist_visitor,
         "scheduled_start": appointment.scheduled_start.isoformat() if appointment.scheduled_start else None,
         "scheduled_end": appointment.scheduled_end.isoformat() if appointment.scheduled_end else None,
         "status": appointment.status,
+        "visit_code": visit_code.code if visit_code else None,
     })
 
 
@@ -263,6 +330,7 @@ async def search_appointments(request: Request) -> JSONResponse:
 
         appointment_ids = [a.id for a in appointments]
         visits_map = {}
+        visit_codes_map = {}
         if appointment_ids:
             from sqlalchemy import desc
             visit_result = await session.execute(
@@ -272,6 +340,12 @@ async def search_appointments(request: Request) -> JSONResponse:
             for v in visit_result.scalars().all():
                 if v.appointment_id not in visits_map:
                     visits_map[v.appointment_id] = v
+
+            vc_result = await session.execute(
+                select(VisitCode).where(VisitCode.appointment_id.in_(appointment_ids))
+            )
+            for vc in vc_result.scalars().all():
+                visit_codes_map[vc.appointment_id] = vc
 
     return JSONResponse([
         {
@@ -283,9 +357,12 @@ async def search_appointments(request: Request) -> JSONResponse:
             "visitor_phone": a.visitor_phone,
             "visitor_id_card": a.visitor_id_card,
             "visitor_relation": a.visitor_relation,
+            "is_whitelist_visitor": a.is_whitelist_visitor,
             "scheduled_start": a.scheduled_start.isoformat() if a.scheduled_start else None,
             "scheduled_end": a.scheduled_end.isoformat() if a.scheduled_end else None,
             "status": a.status,
+            "visit_code": visit_codes_map.get(a.id).code if visit_codes_map.get(a.id) else None,
+            "visit_code_used": visit_codes_map.get(a.id).is_used if visit_codes_map.get(a.id) else False,
             "release_status": visits_map.get(a.id).release_status if visits_map.get(a.id) else None,
             "reject_reason": visits_map.get(a.id).reject_reason if visits_map.get(a.id) else None,
             "check_in_time": visits_map.get(a.id).check_in_time.isoformat() if visits_map.get(a.id) and visits_map.get(a.id).check_in_time else None,

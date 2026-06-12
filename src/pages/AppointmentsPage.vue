@@ -8,13 +8,32 @@
         </div>
         <Button label="新增预约" icon="pi pi-plus" @click="showDialog()" />
       </div>
-      <DataTable :value="appointments" paginator :rows="10" stripedRows tableStyle="min-width: 1200px">
+      <DataTable :value="appointments" paginator :rows="10" stripedRows tableStyle="min-width: 1400px">
         <Column field="appointment_no" header="预约编号" />
         <Column field="resident_name" header="住户姓名" />
-        <Column field="visitor_name" header="访客姓名" />
+        <Column field="visitor_name" header="访客姓名">
+          <template #body="{ data }">
+            <div class="visitor-cell">
+              <span>{{ data.visitor_name }}</span>
+              <span v-if="data.is_whitelist_visitor" class="whitelist-tag" title="白名单访客">
+                <Star :size="12" fill="#F59E0B" />
+                白名单
+              </span>
+            </div>
+          </template>
+        </Column>
         <Column field="visitor_relation" header="关系" />
         <Column field="scheduled_start" header="预约开始" />
         <Column field="scheduled_end" header="预约结束" />
+        <Column header="探视码">
+          <template #body="{ data }">
+            <span v-if="data.visit_code" class="visit-code" :class="{ used: data.visit_code_used }">
+              {{ data.visit_code }}
+              <span v-if="data.visit_code_used" class="code-used-label">已使用</span>
+            </span>
+            <span v-else style="color: #999">-</span>
+          </template>
+        </Column>
         <Column field="status" header="预约状态">
           <template #body="{ data }">
             <span class="status-badge" :class="data.status">{{ statusLabel(data.status) }}</span>
@@ -32,9 +51,16 @@
             <span v-else style="color: #999">-</span>
           </template>
         </Column>
-        <Column header="操作" :style="{ width: '100px' }">
+        <Column header="操作" :style="{ width: '180px' }">
           <template #body="{ data }">
-            <Button v-if="data.status === 'pending'" label="取消" severity="danger" size="small" @click="handleCancel(data)" />
+            <template v-if="data.status === 'pending'">
+              <Button label="通过" severity="success" size="small" @click="handleApprove(data)" />
+              <Button label="取消" severity="danger" size="small" style="margin-left: 8px" @click="handleCancel(data)" />
+            </template>
+            <template v-else-if="data.status === 'approved' && !data.visit_code_used">
+              <Button label="查看码" severity="info" size="small" @click="showVisitCode(data)" />
+              <Button label="取消" severity="danger" size="small" style="margin-left: 8px" @click="handleCancel(data)" />
+            </template>
           </template>
         </Column>
       </DataTable>
@@ -43,8 +69,12 @@
         <div class="dialog-form">
           <div class="field">
             <label>住户 <span class="required">*</span></label>
-            <Dropdown v-model="form.resident_id" :options="residentOptions" optionLabel="name" optionValue="id" placeholder="请选择住户" filter :class="{ 'p-invalid': errors.resident_id }" />
+            <Dropdown v-model="form.resident_id" :options="residentOptions" optionLabel="name" optionValue="id" placeholder="请选择住户" filter :class="{ 'p-invalid': errors.resident_id }" @change="onResidentChange" />
             <small v-if="errors.resident_id" class="p-error">{{ errors.resident_id }}</small>
+          </div>
+          <div class="field" v-if="form.resident_id && residentWhitelist.length">
+            <label>快速选择白名单访客</label>
+            <Dropdown v-model="selectedWhitelistId" :options="whitelistOptions" optionLabel="label" optionValue="id" placeholder="选择白名单访客快速填充" showClear @change="onWhitelistSelect" />
           </div>
           <div class="field">
             <label>访客姓名 <span class="required">*</span></label>
@@ -82,14 +112,31 @@
           <Button label="保存" @click="handleSave" />
         </template>
       </Dialog>
+
+      <Dialog v-model:visible="codeDialogVisible" header="探视码" :modal="true" :style="{ width: '400px' }">
+        <div class="code-dialog" v-if="currentAppointment">
+          <div class="code-info">
+            <div class="info-row"><span class="info-label">预约编号：</span><span>{{ currentAppointment.appointment_no }}</span></div>
+            <div class="info-row"><span class="info-label">住户：</span><span>{{ currentAppointment.resident_name }}</span></div>
+            <div class="info-row"><span class="info-label">访客：</span><span>{{ currentAppointment.visitor_name }}</span></div>
+            <div class="info-row"><span class="info-label">预约时段：</span><span>{{ currentAppointment.scheduled_start }} ~ {{ currentAppointment.scheduled_end }}</span></div>
+          </div>
+          <div class="code-display" v-if="currentAppointment.visit_code">
+            <div class="code-title">一次性探视码</div>
+            <div class="code-value">{{ currentAppointment.visit_code }}</div>
+            <div class="code-hint">请将此码告知访客，前台可扫码或输入快速核验</div>
+          </div>
+        </div>
+      </Dialog>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { appointmentApi, residentApi } from '@/api'
+import { appointmentApi, residentApi, whitelistApi } from '@/api'
+import { Star } from 'lucide-vue-next'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
@@ -100,8 +147,12 @@ import Calendar from 'primevue/calendar'
 
 const appointments = ref<any[]>([])
 const residentOptions = ref<any[]>([])
+const residentWhitelist = ref<any[]>([])
 const dialogVisible = ref(false)
+const codeDialogVisible = ref(false)
 const statusFilter = ref<string | null>(null)
+const selectedWhitelistId = ref<number | null>(null)
+const currentAppointment = ref<any>(null)
 
 const form = ref<{
   resident_id: number | null
@@ -118,7 +169,8 @@ const form = ref<{
 const errors = reactive<Record<string, string>>({})
 
 const statusOptions = [
-  { label: '待处理', value: 'pending' },
+  { label: '待审核', value: 'pending' },
+  { label: '已通过', value: 'approved' },
   { label: '已签到', value: 'checked_in' },
   { label: '已签退', value: 'checked_out' },
   { label: '已取消', value: 'cancelled' },
@@ -133,12 +185,20 @@ const relationshipOptions = [
   { label: '公公', value: '公公' },
   { label: '姐妹', value: '姐妹' },
   { label: '兄弟', value: '兄弟' },
+  { label: '子女', value: '子女' },
   { label: '朋友', value: '朋友' },
   { label: '其他', value: '其他' },
 ]
 
+const whitelistOptions = computed(() => {
+  return residentWhitelist.value.map(w => ({
+    id: w.id,
+    label: `${w.visitor_name}（${w.visitor_relation || '关系未填'}）`,
+  }))
+})
+
 function statusLabel(status: string) {
-  const map: Record<string, string> = { pending: '待处理', checked_in: '已签到', checked_out: '已签退', cancelled: '已取消', rejected: '已拒绝' }
+  const map: Record<string, string> = { pending: '待审核', approved: '已通过', checked_in: '已签到', checked_out: '已签退', cancelled: '已取消', rejected: '已拒绝' }
   return map[status] || status
 }
 
@@ -187,16 +247,48 @@ async function loadResidents() {
   } catch {}
 }
 
+async function onResidentChange() {
+  selectedWhitelistId.value = null
+  if (form.value.resident_id) {
+    try {
+      residentWhitelist.value = await whitelistApi.getByResident(form.value.resident_id)
+    } catch {
+      residentWhitelist.value = []
+    }
+  } else {
+    residentWhitelist.value = []
+  }
+}
+
+function onWhitelistSelect() {
+  if (selectedWhitelistId.value) {
+    const wl = residentWhitelist.value.find(w => w.id === selectedWhitelistId.value)
+    if (wl) {
+      form.value.visitor_name = wl.visitor_name || ''
+      form.value.visitor_phone = wl.visitor_phone || ''
+      form.value.visitor_id_card = wl.visitor_id_card || ''
+      form.value.visitor_relation = wl.visitor_relation || ''
+    }
+  }
+}
+
 function showDialog() {
   form.value = { resident_id: null, visitor_name: '', visitor_phone: '', visitor_id_card: '', visitor_relation: '', scheduled_start: null, scheduled_end: null }
+  selectedWhitelistId.value = null
+  residentWhitelist.value = []
   clearErrors()
   dialogVisible.value = true
+}
+
+function showVisitCode(apt: any) {
+  currentAppointment.value = apt
+  codeDialogVisible.value = true
 }
 
 async function handleSave() {
   if (!validate()) return
   try {
-    const data = {
+    const data: any = {
       resident_id: form.value.resident_id!,
       visitor_name: form.value.visitor_name,
       visitor_phone: form.value.visitor_phone || undefined,
@@ -205,11 +297,29 @@ async function handleSave() {
       scheduled_start: form.value.scheduled_start ? formatDate(form.value.scheduled_start) : '',
       scheduled_end: form.value.scheduled_end ? formatDate(form.value.scheduled_end) : '',
     }
+    if (selectedWhitelistId.value) {
+      data.whitelist_id = selectedWhitelistId.value
+    }
     await appointmentApi.create(data)
     dialogVisible.value = false
     await loadData()
   } catch (e: any) {
     alert(e.message || '保存失败')
+  }
+}
+
+async function handleApprove(apt: any) {
+  if (!confirm(`确定通过预约「${apt.appointment_no}」？通过后将自动生成探视码。`)) return
+  try {
+    const result: any = await appointmentApi.update(apt.id, { status: 'approved' })
+    if (result && result.visit_code) {
+      apt.status = 'approved'
+      apt.visit_code = result.visit_code
+      apt.visit_code_used = false
+    }
+    await loadData()
+  } catch (e: any) {
+    alert(e.message || '操作失败')
   }
 }
 
@@ -236,7 +346,7 @@ onMounted(() => {
 
 <style scoped>
 .appointments-page {
-  max-width: 1200px;
+  max-width: 1400px;
 }
 
 .page-title {
@@ -262,6 +372,51 @@ onMounted(() => {
   color: #E74C3C;
 }
 
+.visitor-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.whitelist-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: #FEF3C7;
+  color: #D97706;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.visit-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #4F46E5;
+  background: #EEF2FF;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.visit-code.used {
+  color: #6B7280;
+  background: #F3F4F6;
+  text-decoration: line-through;
+}
+
+.code-used-label {
+  font-size: 10px;
+  font-weight: 400;
+  font-family: inherit;
+  letter-spacing: 0;
+}
+
 .status-badge {
   display: inline-block;
   padding: 2px 12px;
@@ -273,6 +428,11 @@ onMounted(() => {
 .status-badge.pending {
   background: #FEF3C7;
   color: #D97706;
+}
+
+.status-badge.approved {
+  background: #DBEAFE;
+  color: #2563EB;
 }
 
 .status-badge.checked_in {
@@ -327,5 +487,58 @@ onMounted(() => {
 .dialog-form .field .p-dropdown,
 .dialog-form .field .p-calendar {
   width: 100%;
+}
+
+.code-dialog {
+  padding: 8px 0;
+}
+
+.code-info {
+  background: #F9FAFB;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.info-label {
+  color: #6B7280;
+  min-width: 80px;
+}
+
+.code-display {
+  text-align: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+  border-radius: 12px;
+}
+
+.code-title {
+  font-size: 13px;
+  color: #6B7280;
+  margin-bottom: 12px;
+}
+
+.code-value {
+  font-family: 'Courier New', monospace;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  color: #4F46E5;
+  margin-bottom: 12px;
+}
+
+.code-hint {
+  font-size: 12px;
+  color: #6B7280;
 }
 </style>

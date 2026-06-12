@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'login',
@@ -48,6 +49,12 @@ const routes = [
     path: '/blacklist',
     name: 'blacklist',
     component: () => import('@/pages/BlacklistPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/whitelist',
+    name: 'whitelist',
+    component: () => import('@/pages/WhitelistPage.vue'),
     meta: { requiresAuth: true },
   },
   {

@@ -88,15 +88,17 @@ export const residentApi = {
 }
 
 export const appointmentApi = {
-  list: (params?: { status?: string; search?: string }) => get<any[]>('/appointments', params),
-  create: (data: { resident_id: number; visitor_name: string; visitor_phone?: string; visitor_id_card?: string; visitor_relation: string; scheduled_start: string; scheduled_end: string }) => post('/appointments', data),
+  list: (params?: { status?: string; search?: string; resident_id?: number }) => get<any[]>('/appointments', params),
+  create: (data: { resident_id: number; visitor_name: string; visitor_phone?: string; visitor_id_card?: string; visitor_relation: string; scheduled_start: string; scheduled_end: string; whitelist_id?: number }) => post('/appointments', data),
   update: (id: number, data: Partial<{ visitor_name: string; visitor_phone: string; visitor_id_card: string; visitor_relation: string; scheduled_start: string; scheduled_end: string; status: string }>) => put(`/appointments/${id}`, data),
   delete: (id: number) => del(`/appointments/${id}`),
   search: (params: { appointment_no?: string; visitor_name?: string }) => get<any[]>('/appointments/search', params),
 }
 
 export const visitApi = {
-  checkin: (data: { appointment_id: number; visitor_id_card?: string; room_id?: number; reject_reason?: string }) => post('/visits/checkin', data),
+  checkin: (data: { appointment_id: number; visitor_id_card?: string; room_id?: number; reject_reason?: string; visit_code_id?: number }) => post('/visits/checkin', data),
+  checkinByCode: (data: { code: string; reject_reason?: string }) => post('/visits/checkin/code', data),
+  getByCode: (code: string) => get<any>(`/visits/code/${code}`),
   checkout: (data: { visit_id?: number; appointment_id?: number }) => post('/visits/checkout', data),
   listActive: () => get<any[]>('/visits/active'),
 }
@@ -107,8 +109,16 @@ export const blacklistApi = {
   remove: (id: number) => del(`/blacklist/${id}`),
 }
 
+export const whitelistApi = {
+  list: (params?: { resident_id?: number }) => get<any[]>('/whitelist', params),
+  create: (data: { resident_id: number; visitor_name: string; visitor_phone?: string; visitor_id_card?: string; visitor_relation?: string }) => post('/whitelist', data),
+  update: (id: number, data: Partial<{ visitor_name: string; visitor_phone: string; visitor_id_card: string; visitor_relation: string }>) => put(`/whitelist/${id}`, data),
+  delete: (id: number) => del(`/whitelist/${id}`),
+  getByResident: (resident_id: number) => get<any[]>(`/whitelist/resident/${resident_id}`),
+}
+
 export const statisticsApi = {
-  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number }>('/statistics/dashboard'),
+  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number }>('/statistics/dashboard'),
   roomHeat: (params?: { days?: number }) => get<any[]>('/statistics/room-heat', params),
   interception: (params?: { days?: number }) => get<any[]>('/statistics/interception', params),
   overcapacity: (params?: { days?: number }) => get<any[]>('/statistics/overcapacity', params),

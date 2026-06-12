@@ -44,6 +44,33 @@
             <div class="stat-label">超员预警房间</div>
           </div>
         </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #F59E0B, #D97706)">
+          <div class="stat-icon">
+            <Star :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.whitelist_ratio }}%</div>
+            <div class="stat-label">白名单访客占比（{{ stats.whitelist_visit_count }}人）</div>
+          </div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #8B5CF6, #7C3AED)">
+          <div class="stat-icon">
+            <QrCode :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.visit_code_released_count }}</div>
+            <div class="stat-label">探视码放行次数</div>
+          </div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #64748B, #475569)">
+          <div class="stat-icon">
+            <XCircle :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.visit_code_rejected_count }}</div>
+            <div class="stat-label">异常码拦截次数</div>
+          </div>
+        </div>
       </div>
 
       <div class="charts-grid">
@@ -71,7 +98,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { statisticsApi } from '@/api'
-import { Eye, Users, ShieldAlert, AlertTriangle } from 'lucide-vue-next'
+import { Eye, Users, ShieldAlert, AlertTriangle, Star, QrCode, XCircle } from 'lucide-vue-next'
 import { Bar, Doughnut } from 'vue-chartjs'
 import SelectButton from 'primevue/selectbutton'
 import {
@@ -98,6 +125,10 @@ const stats = ref({
   active_visitors: 0,
   interception_count: 0,
   overcapacity_count: 0,
+  whitelist_visit_count: 0,
+  whitelist_ratio: 0,
+  visit_code_released_count: 0,
+  visit_code_rejected_count: 0,
 })
 
 const roomHeatData = reactive<{ labels: string[]; datasets: any[] }>({ labels: [], datasets: [] })
@@ -244,7 +275,7 @@ onMounted(() => {
 }
 
 .stat-label {
-  font-size: 14px;
+  font-size: 13px;
   opacity: 0.9;
   margin-top: 4px;
 }
