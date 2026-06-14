@@ -118,8 +118,32 @@ export const whitelistApi = {
 }
 
 export const statisticsApi = {
-  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number }>('/statistics/dashboard'),
+  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number; pending_deposit_count: number; overdue_item_count: number; abnormal_item_count: number }>('/statistics/dashboard'),
   roomHeat: (params?: { days?: number }) => get<any[]>('/statistics/room-heat', params),
   interception: (params?: { days?: number }) => get<any[]>('/statistics/interception', params),
   overcapacity: (params?: { days?: number }) => get<any[]>('/statistics/overcapacity', params),
+}
+
+export const depositApi = {
+  list: (params?: { status?: string; visitor_name?: string; appointment_id?: number }) => get<any[]>('/deposits', params),
+  create: (data: { appointment_id: number; visit_id?: number; visitor_name: string; amount: number }) => post<any>('/deposits', data),
+  settle: (id: number, data: { action: 'refund' | 'partial_refund' | 'deduct'; refund_amount?: number; deduct_reason?: string }) => post<any>(`/deposits/${id}/settle`, data),
+}
+
+export const itemLoanApi = {
+  list: (params?: { status?: string; item_type?: string; visitor_name?: string; appointment_id?: number }) => get<any[]>('/items', params),
+  create: (data: { appointment_id: number; visit_id?: number; visitor_name: string; item_type: string; item_name: string; item_identifier?: string; due_return_at?: string }) => post<any>('/items', data),
+  returnItem: (id: number, data: { action?: 'return' | 'lost' | 'damaged'; abnormal_reason?: string }) => post<any>(`/items/${id}/return`, data),
+}
+
+export const depositItemSummaryApi = {
+  get: () => get<{
+    pending_deposit_count: number;
+    pending_deposit_amount: number;
+    overdue_item_count: number;
+    abnormal_item_count: number;
+    today_collected_count: number;
+    today_collected_amount: number;
+    item_distribution: Array<{ item_type: string; item_name: string; total_count: number; abnormal_count: number }>;
+  }>('/deposit-items/summary'),
 }

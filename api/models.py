@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, Integer, DateTime, Enum, ForeignKey, func
+from sqlalchemy import String, Integer, DateTime, Enum, ForeignKey, func, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -143,3 +143,60 @@ class CodeErrorLog(Base):
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class DepositRecord(Base):
+    __tablename__ = "deposit_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    visit_id: Mapped[int] = mapped_column(Integer, ForeignKey("visits.id"), nullable=True)
+    appointment_id: Mapped[int] = mapped_column(Integer, ForeignKey("appointments.id"), nullable=False)
+    visitor_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    amount: Mapped[float] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(
+        Enum("collected", "refunded", "partial_refunded", "deducted", name="deposit_status"),
+        default="collected",
+    )
+    refund_amount: Mapped[float] = mapped_column(nullable=True)
+    deduct_amount: Mapped[float] = mapped_column(nullable=True)
+    deduct_reason: Mapped[str] = mapped_column(String(255), nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    refunded_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    operator: Mapped[str] = mapped_column(String(50), nullable=True)
+
+    appointment: Mapped["Appointment"] = relationship()
+    visit: Mapped["Visit"] = relationship()
+
+
+class ItemLoanRecord(Base):
+    __tablename__ = "item_loan_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    visit_id: Mapped[int] = mapped_column(Integer, ForeignKey("visits.id"), nullable=True)
+    appointment_id: Mapped[int] = mapped_column(Integer, ForeignKey("appointments.id"), nullable=False)
+    visitor_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    item_type: Mapped[str] = mapped_column(
+        Enum(
+            "temporary_id",
+            "escort_clothes",
+            "locker_key",
+            "escort_bed",
+            "other",
+            name="item_type",
+        ),
+        nullable=False,
+    )
+    item_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    item_identifier: Mapped[str] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(
+        Enum("loaned", "returned", "overdue", "lost", "damaged", name="item_loan_status"),
+        default="loaned",
+    )
+    loaned_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    due_return_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    returned_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    abnormal_reason: Mapped[str] = mapped_column(String(255), nullable=True)
+    operator: Mapped[str] = mapped_column(String(50), nullable=True)
+
+    appointment: Mapped["Appointment"] = relationship()
+    visit: Mapped["Visit"] = relationship()

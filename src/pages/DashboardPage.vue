@@ -71,6 +71,33 @@
             <div class="stat-label">异常码拦截次数</div>
           </div>
         </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #F59E0B, #D97706)">
+          <div class="stat-icon">
+            <Wallet :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.pending_deposit_count }}</div>
+            <div class="stat-label">押金未退笔数</div>
+          </div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #EF4444, #DC2626)">
+          <div class="stat-icon">
+            <Clock :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.overdue_item_count }}</div>
+            <div class="stat-label">物品逾期未还</div>
+          </div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #8B5CF6, #7C3AED)">
+          <div class="stat-icon">
+            <AlertOctagon :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.abnormal_item_count }}</div>
+            <div class="stat-label">异常物品（丢失/损坏）</div>
+          </div>
+        </div>
       </div>
 
       <div class="charts-grid">
@@ -98,7 +125,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { statisticsApi } from '@/api'
-import { Eye, Users, ShieldAlert, AlertTriangle, Star, QrCode, XCircle } from 'lucide-vue-next'
+import { Eye, Users, ShieldAlert, AlertTriangle, Star, QrCode, XCircle, Wallet, Clock, AlertOctagon } from 'lucide-vue-next'
 import { Bar, Doughnut } from 'vue-chartjs'
 import SelectButton from 'primevue/selectbutton'
 import {
@@ -129,6 +156,9 @@ const stats = ref({
   whitelist_ratio: 0,
   visit_code_released_count: 0,
   visit_code_rejected_count: 0,
+  pending_deposit_count: 0,
+  overdue_item_count: 0,
+  abnormal_item_count: 0,
 })
 
 const roomHeatData = reactive<{ labels: string[]; datasets: any[] }>({ labels: [], datasets: [] })

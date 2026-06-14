@@ -1,13 +1,13 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, func, and_, distinct
+from sqlalchemy import select, func, and_, distinct, or_
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from database import async_session
-from models import Appointment, Room, Visit, Floor, VisitCode
+from models import Appointment, Room, Visit, Floor, VisitCode, DepositRecord, ItemLoanRecord, CodeErrorLog
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,34 @@ async def dashboard(request: Request) -> JSONResponse:
         )
         visit_code_rejected_count = visit_code_rejected_result.scalar()
 
+        pending_deposit_result = await session.execute(
+            select(func.count()).select_from(DepositRecord).where(
+                DepositRecord.status == "collected"
+            )
+        )
+        pending_deposit_count = pending_deposit_result.scalar()
+
+        overdue_items_result = await session.execute(
+            select(func.count()).select_from(ItemLoanRecord).where(
+                or_(
+                    ItemLoanRecord.status == "overdue",
+                    and_(
+                        ItemLoanRecord.status == "loaned",
+                        ItemLoanRecord.due_return_at.isnot(None),
+                        ItemLoanRecord.due_return_at < now,
+                    ),
+                )
+            )
+        )
+        overdue_item_count = overdue_items_result.scalar()
+
+        abnormal_items_result = await session.execute(
+            select(func.count()).select_from(ItemLoanRecord).where(
+                ItemLoanRecord.status.in_(["lost", "damaged"])
+            )
+        )
+        abnormal_item_count = abnormal_items_result.scalar()
+
     return JSONResponse({
         "today_visits": visit_count,
         "active_visitors": active_visitors,
@@ -108,6 +136,9 @@ async def dashboard(request: Request) -> JSONResponse:
         "whitelist_ratio": whitelist_ratio,
         "visit_code_released_count": visit_code_released_count,
         "visit_code_rejected_count": visit_code_rejected_count,
+        "pending_deposit_count": pending_deposit_count,
+        "overdue_item_count": overdue_item_count,
+        "abnormal_item_count": abnormal_item_count,
     })
 
 

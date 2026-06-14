@@ -58,6 +58,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/deposit-items',
+    name: 'deposit-items',
+    component: () => import('@/pages/DepositItemsPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/statistics',
     redirect: '/',
   },
