@@ -64,6 +64,18 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/visitor-bills',
+    name: 'visitor-bills',
+    component: () => import('@/pages/VisitorBillsPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/bill-signature/:id',
+    name: 'bill-signature',
+    component: () => import('@/pages/BillSignaturePage.vue'),
+    meta: { requiresAuth: false },
+  },
+  {
     path: '/statistics',
     redirect: '/',
   },

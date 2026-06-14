@@ -1,8 +1,75 @@
 <template>
   <AppLayout>
-    <div class="checkout-page">
-      <h2 class="page-title">离开登记与账单结算</h2>
-      <DataTable :value="activeVisits" paginator :rows="10" stripedRows tableStyle="min-width: 900px" :emptyMessage="'暂无待离开访客'">
+    <div class="bills-page">
+      <h2 class="page-title">访客账单管理</h2>
+
+      <div class="summary-cards">
+        <div class="summary-card" style="background: linear-gradient(135deg, #10B981, #059669)">
+          <div class="s-icon"><FileCheck :size="24" color="white" /></div>
+          <div class="s-info">
+            <div class="s-number">{{ billStats.settlement_rate }}<span class="s-unit">%</span></div>
+            <div class="s-label">账单已结清率</div>
+            <div class="s-sub">{{ billStats.paid_bills }}/{{ billStats.total_bills }} 笔</div>
+          </div>
+        </div>
+        <div class="summary-card" style="background: linear-gradient(135deg, #F59E0B, #D97706)">
+          <div class="s-icon"><Calculator :size="24" color="white" /></div>
+          <div class="s-info">
+            <div class="s-number">¥{{ billStats.avg_deduct_amount.toFixed(2) }}</div>
+            <div class="s-label">平均扣费金额</div>
+            <div class="s-sub">共 {{ billStats.deduct_count }} 笔扣费</div>
+          </div>
+        </div>
+        <div class="summary-card" style="background: linear-gradient(135deg, #8B5CF6, #7C3AED)">
+          <div class="s-icon"><TrendingDown :size="24" color="white" /></div>
+          <div class="s-info">
+            <div class="s-number">¥{{ billStats.total_deduct_amount.toFixed(2) }}</div>
+            <div class="s-label">累计扣费总额</div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="billStats.deduct_reason_distribution.length" class="distribution-card">
+        <h3 class="dist-title">高频扣费原因分布（最近30天）</h3>
+        <div class="dist-list">
+          <div v-for="item in billStats.deduct_reason_distribution" :key="item.reason" class="dist-item">
+            <div class="dist-name">{{ item.reason }}</div>
+            <div class="dist-bar-wrap">
+              <div class="dist-bar" :style="{ width: getDistWidth(item.count) + '%' }"></div>
+            </div>
+            <div class="dist-counts">
+              <span>{{ item.count }} 次</span>
+              <span class="amount">¥{{ item.total_amount.toFixed(2) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <div class="search-row">
+          <span class="p-input-icon-left">
+            <i class="pi pi-search" />
+            <InputText v-model="searchForm.visitor_name" placeholder="搜索访客姓名" @keyup.enter="loadBills" />
+          </span>
+          <span class="p-input-icon-left">
+            <i class="pi pi-search" />
+            <InputText v-model="searchForm.bill_no" placeholder="搜索账单编号" @keyup.enter="loadBills" />
+          </span>
+          <Select v-model="searchForm.payment_status" :options="paymentStatusOptions" optionLabel="label" optionValue="value" placeholder="支付状态" class="filter-select" @change="loadBills" />
+          <Select v-model="searchForm.signature_status" :options="signatureStatusOptions" optionLabel="label" optionValue="value" placeholder="签收状态" class="filter-select" @change="loadBills" />
+          <Calendar v-model="searchForm.start_date" dateFormat="yy-mm-dd" placeholder="开始日期" class="filter-date" />
+          <Calendar v-model="searchForm.end_date" dateFormat="yy-mm-dd" placeholder="结束日期" class="filter-date" />
+          <Button label="搜索" icon="pi pi-search" @click="loadBills" />
+          <Button label="重置" icon="pi pi-refresh" severity="secondary" @click="resetSearch" />
+        </div>
+      </div>
+
+      <DataTable :value="bills" paginator :rows="10" stripedRows tableStyle="min-width: 100%" :emptyMessage="'暂无账单记录'">
+        <Column field="bill_no" header="账单编号" :style="{ width: '180px' }">
+          <template #body="{ data }">
+            <span class="bill-no">{{ data.bill_no }}</span>
+          </template>
+        </Column>
         <Column field="visitor_name" header="访客姓名" :style="{ width: '100px' }">
           <template #body="{ data }">
             <span class="strong">{{ data.visitor_name }}</span>
@@ -10,27 +77,44 @@
         </Column>
         <Column field="room_number" header="房间号" :style="{ width: '80px' }" />
         <Column field="resident_name" header="探视住户" :style="{ width: '100px' }" />
-        <Column field="check_in_time" header="签到时间" :style="{ width: '160px' }">
-          <template #body="{ data }">{{ formatTime(data.check_in_time) }}</template>
-        </Column>
-        <Column field="scheduled_end" header="预计离开" :style="{ width: '160px' }">
+        <Column field="total_amount" header="应付金额" :style="{ width: '110px' }">
           <template #body="{ data }">
-            <span :class="{ overdue: isOverdue(data) }">{{ formatTime(data.scheduled_end) }}</span>
+            <span class="amount">¥{{ Number(data.total_amount).toFixed(2) }}</span>
           </template>
         </Column>
-        <Column header="操作" :style="{ width: '140px' }">
+        <Column field="actual_paid" header="实付金额" :style="{ width: '110px' }">
           <template #body="{ data }">
-            <Button label="生成账单" severity="primary" size="small" @click="handleGenerateBill(data)" />
+            <span :class="{ 'zero': data.actual_paid === 0 }">¥{{ Number(data.actual_paid).toFixed(2) }}</span>
+          </template>
+        </Column>
+        <Column header="支付状态" :style="{ width: '100px' }">
+          <template #body="{ data }">
+            <span class="payment-status" :class="data.payment_status">{{ paymentStatusLabel(data.payment_status) }}</span>
+          </template>
+        </Column>
+        <Column header="签收状态" :style="{ width: '100px' }">
+          <template #body="{ data }">
+            <span class="signature-status" :class="data.signature_status">{{ signatureStatusLabel(data.signature_status) }}</span>
+          </template>
+        </Column>
+        <Column field="generated_at" header="生成时间" :style="{ width: '160px' }">
+          <template #body="{ data }">{{ formatTime(data.generated_at) }}</template>
+        </Column>
+        <Column header="操作" :style="{ width: '200px' }">
+          <template #body="{ data }">
+            <Button label="查看" size="small" severity="info" @click="viewBillDetail(data)" class="mr-2" />
+            <template v-if="data.signature_status !== 'signed'">
+              <Button label="签收" size="small" severity="primary" @click="openSignDialog(data)" />
+            </template>
           </template>
         </Column>
       </DataTable>
 
-      <Dialog v-model:visible="billDialogVisible" :modal="true" :style="{ width: '720px' }" @hide="resetBillDialog">
+      <Dialog v-model:visible="detailDialogVisible" :modal="true" :style="{ width: '720px' }">
         <template #header>
           <div class="dialog-header">
             <FileText :size="20" />
-            <span v-if="currentBill">访客离场账单 · {{ currentBill.bill_no }}</span>
-            <span v-else>生成账单</span>
+            <span v-if="currentBill">账单详情 · {{ currentBill.bill_no }}</span>
           </div>
         </template>
         <div v-if="currentBill" class="bill-content">
@@ -138,27 +222,13 @@
             <img :src="currentBill.signature.signature_data" class="sp-image" alt="签名" />
           </div>
         </div>
-
-        <div v-else-if="loading" class="loading-box">
-          <i class="pi pi-spin pi-spinner" style="font-size: 32px; color: #E8A0BF"></i>
-          <p>正在生成账单...</p>
-        </div>
-
         <template #footer>
-          <template v-if="currentBill">
-            <Button label="打印账单" icon="pi pi-print" severity="secondary" @click="printBill" />
-            <template v-if="currentBill.payment_status !== 'paid'">
-              <Button label="确认支付" icon="pi pi-credit-card" severity="warning" @click="openPayDialog" />
-            </template>
-            <template v-if="currentBill.signature_status !== 'signed'">
-              <Button label="电子签收" icon="pi pi-pencil" severity="primary" @click="openSignDialog" />
-            </template>
-            <template v-if="currentBill.payment_status === 'paid' && currentBill.signature_status === 'signed'">
-              <Button label="完成" severity="success" @click="billDialogVisible = false" />
-            </template>
+          <Button label="关闭" severity="secondary" @click="detailDialogVisible = false" />
+          <template v-if="currentBill && currentBill.payment_status !== 'paid'">
+            <Button label="确认支付" icon="pi pi-credit-card" severity="warning" @click="openPayDialog" />
           </template>
-          <template v-else>
-            <Button label="取消" severity="secondary" @click="billDialogVisible = false" />
+          <template v-if="currentBill && currentBill.signature_status !== 'signed'">
+            <Button label="电子签收" icon="pi pi-pencil" severity="primary" @click="openSignDialog(currentBill)" />
           </template>
         </template>
       </Dialog>
@@ -166,7 +236,7 @@
       <Dialog v-model:visible="payDialogVisible" header="确认支付" :modal="true" :style="{ width: '480px' }">
         <div v-if="currentBill" class="pay-form">
           <div class="pay-info">
-            <div class="info-row"><span class="k">账单编号</span><span class="v apt-no">{{ currentBill.bill_no }}</span></div>
+            <div class="info-row"><span class="k">账单编号</span><span class="v bill-no">{{ currentBill.bill_no }}</span></div>
             <div class="info-row"><span class="k">访客姓名</span><span class="v">{{ currentBill.visitor_name }}</span></div>
             <div class="info-row"><span class="k">应付金额</span><span class="v amount">¥{{ currentBill.total_amount.toFixed(2) }}</span></div>
           </div>
@@ -193,12 +263,12 @@
       <Dialog v-model:visible="signDialogVisible" header="电子签名确认" :modal="true" :style="{ width: '640px' }">
         <div class="sign-form">
           <div class="sign-info" v-if="currentBill">
-            <div class="info-row"><span class="k">账单编号</span><span class="v apt-no">{{ currentBill.bill_no }}</span></div>
+            <div class="info-row"><span class="k">账单编号</span><span class="v bill-no">{{ currentBill.bill_no }}</span></div>
             <div class="info-row"><span class="k">应付金额</span><span class="v amount">¥{{ currentBill.total_amount.toFixed(2) }}</span></div>
           </div>
           <div class="field">
             <label>签收人姓名 <span class="required">*</span></label>
-            <InputText v-model="signForm.signer_name" placeholder="请输入签收人姓名" :value="currentBill?.visitor_name" />
+            <InputText v-model="signForm.signer_name" placeholder="请输入签收人姓名" />
           </div>
           <SignaturePad ref="signaturePadRef" @signature="onSignature" @change="onSignatureChange" />
           <div class="sign-terms">
@@ -217,27 +287,58 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import SignaturePad from '@/components/SignaturePad.vue'
-import { visitApi, billApi, type VisitorBill } from '@/api'
+import { billApi, type VisitorBill } from '@/api'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
+import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
+import Calendar from 'primevue/calendar'
 import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
-import InputText from 'primevue/inputtext'
 import Checkbox from 'primevue/checkbox'
-import { FileText, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
+import { FileCheck, Calculator, TrendingDown, FileText, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
 
-const router = useRouter()
-const activeVisits = ref<any[]>([])
-const currentVisit = ref<any>(null)
+const bills = ref<VisitorBill[]>([])
 const currentBill = ref<VisitorBill | null>(null)
-const loading = ref(false)
 const signaturePadRef = ref<InstanceType<typeof SignaturePad> | null>(null)
 
-const billDialogVisible = ref(false)
+const billStats = reactive({
+  total_bills: 0,
+  paid_bills: 0,
+  settlement_rate: 0,
+  deduct_count: 0,
+  total_deduct_amount: 0,
+  avg_deduct_amount: 0,
+  deduct_reason_distribution: [] as Array<{ reason: string; count: number; total_amount: number }>,
+})
+
+const searchForm = reactive({
+  visitor_name: '',
+  bill_no: '',
+  payment_status: null as string | null,
+  signature_status: null as string | null,
+  start_date: null as Date | null,
+  end_date: null as Date | null,
+})
+
+const paymentStatusOptions = [
+  { label: '全部状态', value: null },
+  { label: '待支付', value: 'pending' },
+  { label: '已支付', value: 'paid' },
+  { label: '部分支付', value: 'partial_paid' },
+  { label: '已免收', value: 'waived' },
+]
+
+const signatureStatusOptions = [
+  { label: '全部状态', value: null },
+  { label: '未签收', value: 'unsigned' },
+  { label: '已签收', value: 'signed' },
+]
+
+const detailDialogVisible = ref(false)
 const payDialogVisible = ref(false)
 const signDialogVisible = ref(false)
 
@@ -265,6 +366,14 @@ const canSubmitSign = computed(() => {
   )
 })
 
+const maxDistCount = computed(() =>
+  Math.max(1, ...billStats.deduct_reason_distribution.map((d: any) => d.count))
+)
+
+function getDistWidth(count: number) {
+  return (count / maxDistCount.value) * 100
+}
+
 function formatTime(timeStr: string | null | undefined): string {
   if (!timeStr) return '-'
   try {
@@ -279,11 +388,6 @@ function formatTime(timeStr: string | null | undefined): string {
   } catch {
     return timeStr
   }
-}
-
-function isOverdue(visit: any): boolean {
-  if (!visit.scheduled_end) return false
-  return new Date(visit.scheduled_end.replace(' ', 'T')) < new Date()
 }
 
 function chargeTypeLabel(type: string): string {
@@ -316,34 +420,52 @@ function signatureStatusLabel(status: string): string {
   return m[status] || status
 }
 
-async function loadData() {
+async function loadBillStats() {
   try {
-    activeVisits.value = await visitApi.listActive()
+    const data = await billApi.statistics({ days: 30 })
+    Object.assign(billStats, data)
   } catch {}
 }
 
-async function handleGenerateBill(visit: any) {
-  currentVisit.value = visit
-  currentBill.value = null
-  loading.value = true
-  billDialogVisible.value = true
-
+async function loadBills() {
   try {
-    const bill = await billApi.generate({ visit_id: visit.id })
-    currentBill.value = bill
-  } catch (e: any) {
-    alert(e.message || '生成账单失败')
-    billDialogVisible.value = false
-  } finally {
-    loading.value = false
+    const params: any = {}
+    if (searchForm.visitor_name.trim()) params.visitor_name = searchForm.visitor_name.trim()
+    if (searchForm.bill_no.trim()) params.bill_no = searchForm.bill_no.trim()
+    if (searchForm.payment_status) params.payment_status = searchForm.payment_status
+    if (searchForm.signature_status) params.signature_status = searchForm.signature_status
+    if (searchForm.start_date) params.start_date = formatDate(searchForm.start_date)
+    if (searchForm.end_date) params.end_date = formatDate(searchForm.end_date)
+    bills.value = await billApi.list(params)
+  } catch {
+    bills.value = []
   }
 }
 
-function resetBillDialog() {
-  currentVisit.value = null
-  currentBill.value = null
-  loading.value = false
-  loadData()
+function formatDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function resetSearch() {
+  searchForm.visitor_name = ''
+  searchForm.bill_no = ''
+  searchForm.payment_status = null
+  searchForm.signature_status = null
+  searchForm.start_date = null
+  searchForm.end_date = null
+  loadBills()
+}
+
+async function viewBillDetail(bill: VisitorBill) {
+  try {
+    currentBill.value = await billApi.get(bill.id)
+    detailDialogVisible.value = true
+  } catch (e: any) {
+    alert(e.message || '加载账单详情失败')
+  }
 }
 
 function openPayDialog() {
@@ -363,14 +485,16 @@ async function submitPayment() {
     currentBill.value = bill
     payDialogVisible.value = false
     alert('支付确认成功')
+    loadBills()
+    loadBillStats()
   } catch (e: any) {
     alert(e.message || '操作失败')
   }
 }
 
-function openSignDialog() {
-  if (!currentBill.value) return
-  signForm.signer_name = currentBill.value.visitor_name
+function openSignDialog(bill: VisitorBill) {
+  currentBill.value = bill
+  signForm.signer_name = bill.visitor_name
   signForm.signature_data = ''
   signForm.has_signature = false
   signForm.agree_terms = false
@@ -398,22 +522,23 @@ async function submitSignature() {
     })
     currentBill.value = bill
     signDialogVisible.value = false
+    detailDialogVisible.value = false
     alert('签名确认成功')
+    loadBills()
   } catch (e: any) {
     alert(e.message || '操作失败')
   }
 }
 
-function printBill() {
-  alert('打印功能待实现')
-}
-
-onMounted(loadData)
+onMounted(() => {
+  loadBillStats()
+  loadBills()
+})
 </script>
 
 <style scoped>
-.checkout-page {
-  max-width: 1200px;
+.bills-page {
+  max-width: 1400px;
 }
 
 .page-title {
@@ -423,14 +548,204 @@ onMounted(loadData)
   margin: 0 0 24px;
 }
 
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.summary-card {
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: white;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+
+.s-icon {
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.s-number {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.s-unit {
+  font-size: 14px;
+  font-weight: 500;
+  margin-left: 4px;
+  opacity: 0.9;
+}
+
+.s-label {
+  font-size: 13px;
+  opacity: 0.9;
+  margin-top: 2px;
+}
+
+.s-sub {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.distribution-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 20px;
+}
+
+.dist-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2D3436;
+  margin: 0 0 14px;
+}
+
+.dist-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px 24px;
+}
+
+.dist-item {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.dist-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.dist-bar-wrap {
+  height: 8px;
+  background: #F3F4F6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dist-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #E8A0BF, #D4899F);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.dist-counts {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #6B7280;
+}
+
+.dist-counts .amount {
+  color: #D97706;
+  font-weight: 600;
+}
+
+.action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-row :deep(.p-input-icon-left) {
+  position: relative;
+}
+.search-row :deep(.p-input-icon-left i) {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  color: #9CA3AF;
+}
+.search-row :deep(.p-input-icon-left .p-inputtext) {
+  padding-left: 32px;
+  width: 180px;
+}
+
+.filter-select {
+  width: 140px;
+}
+
+.filter-date {
+  width: 130px;
+}
+
 .strong {
   font-weight: 600;
   color: #2D3436;
 }
 
-.overdue {
-  color: #DC2626;
+.bill-no {
+  font-family: 'Courier New', monospace;
   font-weight: 600;
+  color: #4F46E5;
+  font-size: 12.5px;
+}
+
+.amount {
+  font-weight: 700;
+  color: #D97706;
+}
+
+.zero {
+  color: #9CA3AF;
+}
+
+.payment-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.payment-status.pending { background: #FEF3C7; color: #D97706; }
+.payment-status.paid { background: #D1FAE5; color: #059669; }
+.payment-status.partial_paid { background: #DBEAFE; color: #2563EB; }
+.payment-status.waived { background: #E5E7EB; color: #4B5563; }
+
+.signature-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.signature-status.unsigned { background: #FEE2E2; color: #DC2626; }
+.signature-status.signed { background: #D1FAE5; color: #059669; }
+
+.mr-2 {
+  margin-right: 8px;
 }
 
 .dialog-header {
@@ -440,16 +755,6 @@ onMounted(loadData)
   font-size: 16px;
   font-weight: 600;
   color: #2D3436;
-}
-
-.loading-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  gap: 12px;
-  color: #6B7280;
 }
 
 .bill-content {
@@ -632,13 +937,6 @@ onMounted(loadData)
   font-weight: 600;
 }
 
-.st-value.pending { background: #FEF3C7; color: #D97706; }
-.st-value.paid { background: #D1FAE5; color: #059669; }
-.st-value.partial_paid { background: #DBEAFE; color: #2563EB; }
-.st-value.waived { background: #E5E7EB; color: #4B5563; }
-.st-value.unsigned { background: #FEE2E2; color: #DC2626; }
-.st-value.signed { background: #D1FAE5; color: #059669; }
-
 .signature-preview {
   background: #ECFDF5;
   border: 1px solid #A7F3D0;
@@ -698,18 +996,6 @@ onMounted(loadData)
 .pay-info .v {
   font-weight: 500;
   color: #2D3436;
-}
-
-.apt-no {
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  color: #4F46E5;
-  font-size: 12.5px;
-}
-
-.amount {
-  font-weight: 700;
-  color: #D97706;
 }
 
 .field {
@@ -807,9 +1093,5 @@ onMounted(loadData)
   color: #4B5563;
   line-height: 1.5;
   margin: 0;
-}
-
-.mr-2 {
-  margin-right: 8px;
 }
 </style>

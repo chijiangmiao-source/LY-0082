@@ -7,7 +7,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from database import async_session
-from models import Appointment, Room, Visit, Floor, VisitCode, DepositRecord, ItemLoanRecord, CodeErrorLog
+from models import Appointment, Room, Visit, Floor, VisitCode, DepositRecord, ItemLoanRecord, CodeErrorLog, VisitorBill, BillChargeItem
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +134,63 @@ async def dashboard(request: Request) -> JSONResponse:
         )
         abnormal_item_count = abnormal_items_result.scalar()
 
+        thirty_days_ago = now - timedelta(days=30)
+
+        total_bills_result = await session.execute(
+            select(func.count()).select_from(VisitorBill).where(
+                VisitorBill.generated_at >= thirty_days_ago
+            )
+        )
+        total_bills = total_bills_result.scalar() or 0
+
+        paid_bills_result = await session.execute(
+            select(func.count()).select_from(VisitorBill).where(
+                and_(
+                    VisitorBill.generated_at >= thirty_days_ago,
+                    VisitorBill.payment_status == "paid",
+                )
+            )
+        )
+        paid_bills = paid_bills_result.scalar() or 0
+
+        settlement_rate = round((paid_bills / total_bills) * 100, 1) if total_bills > 0 else 0
+
+        deduct_items_result = await session.execute(
+            select(BillChargeItem).where(
+                and_(
+                    BillChargeItem.amount > 0,
+                    BillChargeItem.charge_type.in_(["item_damage", "item_lost", "overtime", "other"]),
+                    BillChargeItem.created_at >= thirty_days_ago,
+                )
+            )
+        )
+        deduct_items = deduct_items_result.scalars().all()
+
+        total_deduct_amount = sum(item.amount for item in deduct_items)
+        deduct_count = len(deduct_items)
+        avg_deduct_amount = round(total_deduct_amount / deduct_count, 2) if deduct_count > 0 else 0
+
+        reason_stats = {}
+        for item in deduct_items:
+            reason = item.item_name
+            if reason not in reason_stats:
+                reason_stats[reason] = {"count": 0, "total_amount": 0}
+            reason_stats[reason]["count"] += 1
+            reason_stats[reason]["total_amount"] += item.amount
+
+        deduct_reason_distribution = sorted(
+            [
+                {
+                    "reason": k,
+                    "count": v["count"],
+                    "total_amount": round(v["total_amount"], 2),
+                }
+                for k, v in reason_stats.items()
+            ],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
+
     return JSONResponse({
         "today_visits": visit_count,
         "active_visitors": active_visitors,
@@ -147,6 +204,12 @@ async def dashboard(request: Request) -> JSONResponse:
         "pending_deposit_amount": float(pending_deposit_amount),
         "overdue_item_count": overdue_item_count,
         "abnormal_item_count": abnormal_item_count,
+        "bill_total_count": total_bills,
+        "bill_paid_count": paid_bills,
+        "bill_settle_rate": settlement_rate,
+        "bill_deduct_count": deduct_count,
+        "bill_avg_deduct": avg_deduct_amount,
+        "bill_total_deduct": round(total_deduct_amount, 2),
     })
 
 
@@ -243,9 +306,51 @@ async def overcapacity(request: Request) -> JSONResponse:
     return JSONResponse(result_list)
 
 
+async def deduct_reasons(request: Request) -> JSONResponse:
+    now = datetime.now(timezone.utc)
+    days = int(request.query_params.get("days", "30"))
+    start_date = now - timedelta(days=days)
+
+    async with async_session() as session:
+        deduct_items_result = await session.execute(
+            select(BillChargeItem).where(
+                and_(
+                    BillChargeItem.amount > 0,
+                    BillChargeItem.charge_type.in_(["item_damage", "item_lost", "overtime", "other"]),
+                    BillChargeItem.created_at >= start_date,
+                )
+            )
+        )
+        deduct_items = deduct_items_result.scalars().all()
+
+        reason_stats = {}
+        for item in deduct_items:
+            reason = item.item_name
+            if reason not in reason_stats:
+                reason_stats[reason] = {"count": 0, "total_amount": 0}
+            reason_stats[reason]["count"] += 1
+            reason_stats[reason]["total_amount"] += item.amount
+
+        deduct_reason_distribution = sorted(
+            [
+                {
+                    "reason": k,
+                    "count": v["count"],
+                    "total_amount": round(v["total_amount"], 2),
+                }
+                for k, v in reason_stats.items()
+            ],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
+
+    return JSONResponse(deduct_reason_distribution)
+
+
 routes = [
     Route("/api/statistics/dashboard", dashboard, methods=["GET"]),
     Route("/api/statistics/room-heat", room_heat, methods=["GET"]),
     Route("/api/statistics/interception", interception, methods=["GET"]),
     Route("/api/statistics/overcapacity", overcapacity, methods=["GET"]),
+    Route("/api/statistics/deduct-reasons", deduct_reasons, methods=["GET"]),
 ]

@@ -200,3 +200,80 @@ class ItemLoanRecord(Base):
 
     appointment: Mapped["Appointment"] = relationship()
     visit: Mapped["Visit"] = relationship()
+
+
+class VisitorBill(Base):
+    __tablename__ = "visitor_bills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bill_no: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    visit_id: Mapped[int] = mapped_column(Integer, ForeignKey("visits.id"), nullable=False)
+    appointment_id: Mapped[int] = mapped_column(Integer, ForeignKey("appointments.id"), nullable=False)
+    visitor_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    room_number: Mapped[str] = mapped_column(String(20), nullable=True)
+    resident_name: Mapped[str] = mapped_column(String(50), nullable=True)
+    deposit_amount: Mapped[float] = mapped_column(nullable=False, default=0)
+    deposit_refund_amount: Mapped[float] = mapped_column(nullable=False, default=0)
+    item_damage_fee: Mapped[float] = mapped_column(nullable=False, default=0)
+    item_lost_fee: Mapped[float] = mapped_column(nullable=False, default=0)
+    overtime_fee: Mapped[float] = mapped_column(nullable=False, default=0)
+    other_fee: Mapped[float] = mapped_column(nullable=False, default=0)
+    total_amount: Mapped[float] = mapped_column(nullable=False, default=0)
+    actual_paid: Mapped[float] = mapped_column(nullable=False, default=0)
+    payment_status: Mapped[str] = mapped_column(
+        Enum("pending", "paid", "partial_paid", "waived", name="payment_status"),
+        default="pending",
+    )
+    signature_status: Mapped[str] = mapped_column(
+        Enum("unsigned", "signed", name="signature_status"),
+        default="unsigned",
+    )
+    generated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    paid_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    remarks: Mapped[str] = mapped_column(String(255), nullable=True)
+    operator: Mapped[str] = mapped_column(String(50), nullable=True)
+
+    appointment: Mapped["Appointment"] = relationship()
+    visit: Mapped["Visit"] = relationship()
+    charge_items: Mapped[list["BillChargeItem"]] = relationship(back_populates="bill", cascade="all, delete-orphan")
+    signature: Mapped["ElectronicSignature"] = relationship(back_populates="bill", uselist=False)
+
+
+class BillChargeItem(Base):
+    __tablename__ = "bill_charge_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bill_id: Mapped[int] = mapped_column(Integer, ForeignKey("visitor_bills.id"), nullable=False)
+    charge_type: Mapped[str] = mapped_column(
+        Enum(
+            "deposit_collect",
+            "deposit_refund",
+            "item_damage",
+            "item_lost",
+            "overtime",
+            "other",
+            name="charge_type",
+        ),
+        nullable=False,
+    )
+    item_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(String(255), nullable=True)
+    amount: Mapped[float] = mapped_column(nullable=False)
+    related_record_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    bill: Mapped["VisitorBill"] = relationship(back_populates="charge_items")
+
+
+class ElectronicSignature(Base):
+    __tablename__ = "electronic_signatures"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bill_id: Mapped[int] = mapped_column(Integer, ForeignKey("visitor_bills.id"), nullable=False, unique=True)
+    signer_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    signature_data: Mapped[str] = mapped_column(String, nullable=False)
+    signed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    sign_device: Mapped[str] = mapped_column(String(50), nullable=True)
+    sign_ip: Mapped[str] = mapped_column(String(50), nullable=True)
+
+    bill: Mapped["VisitorBill"] = relationship(back_populates="signature")

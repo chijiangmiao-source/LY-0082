@@ -99,6 +99,36 @@
             <div class="stat-label">异常物品（丢失/损坏）</div>
           </div>
         </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #10B981, #059669)">
+          <div class="stat-icon">
+            <FileCheck :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">{{ stats.bill_settle_rate }}<span class="stat-unit">%</span></div>
+            <div class="stat-label">账单已结清率</div>
+            <div class="stat-sub">{{ stats.bill_paid_count }}/{{ stats.bill_total_count }} 笔</div>
+          </div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #F59E0B, #D97706)">
+          <div class="stat-icon">
+            <DollarSign :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">¥{{ Number(stats.bill_avg_deduct || 0).toFixed(2) }}</div>
+            <div class="stat-label">平均扣费金额</div>
+            <div class="stat-sub">共 {{ stats.bill_deduct_count }} 笔扣费</div>
+          </div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #EC4899, #DB2777)">
+          <div class="stat-icon">
+            <PiggyBank :size="28" color="white" />
+          </div>
+          <div class="stat-info">
+            <div class="stat-number">¥{{ Number(stats.bill_total_deduct || 0).toFixed(2) }}</div>
+            <div class="stat-label">累计扣费总额</div>
+            <div class="stat-sub">近30天</div>
+          </div>
+        </div>
       </div>
 
       <div class="charts-grid">
@@ -117,6 +147,11 @@
           <Bar :data="overcapacityData" :options="barOptions" v-if="overcapacityData.labels.length" />
           <div v-else class="empty-chart">暂无数据</div>
         </div>
+        <div class="chart-card full-width">
+          <h3>高频扣费原因分布（近30天）</h3>
+          <Bar :data="deductReasonData" :options="horizontalBarOptions" v-if="deductReasonData.labels.length" />
+          <div v-else class="empty-chart">暂无数据</div>
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -126,7 +161,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { statisticsApi } from '@/api'
-import { Eye, Users, ShieldAlert, AlertTriangle, Star, QrCode, XCircle, Wallet, Clock, AlertOctagon } from 'lucide-vue-next'
+import { Eye, Users, ShieldAlert, AlertTriangle, Star, QrCode, XCircle, Wallet, Clock, AlertOctagon, FileCheck, DollarSign, PiggyBank } from 'lucide-vue-next'
 import { Bar, Doughnut } from 'vue-chartjs'
 import SelectButton from 'primevue/selectbutton'
 import {
@@ -161,11 +196,18 @@ const stats = ref({
   pending_deposit_amount: 0,
   overdue_item_count: 0,
   abnormal_item_count: 0,
+  bill_total_count: 0,
+  bill_paid_count: 0,
+  bill_settle_rate: 0,
+  bill_deduct_count: 0,
+  bill_avg_deduct: 0,
+  bill_total_deduct: 0,
 })
 
 const roomHeatData = reactive<{ labels: string[]; datasets: any[] }>({ labels: [], datasets: [] })
 const interceptionData = reactive<{ labels: string[]; datasets: any[] }>({ labels: [], datasets: [] })
 const overcapacityData = reactive<{ labels: string[]; datasets: any[] }>({ labels: [], datasets: [] })
+const deductReasonData = reactive<{ labels: string[]; datasets: any[] }>({ labels: [], datasets: [] })
 
 const barOptions = {
   responsive: true,
@@ -183,6 +225,26 @@ const doughnutOptions = {
   maintainAspectRatio: true,
   plugins: {
     legend: { position: 'bottom' as const },
+  },
+}
+
+const horizontalBarOptions = {
+  indexAxis: 'y' as const,
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      callbacks: {
+        label: (context: any) => {
+          const amount = context.dataset.amountData?.[context.dataIndex] || 0
+          return `次数: ${context.raw}, 金额: ¥${Number(amount).toFixed(2)}`
+        }
+      }
+    }
+  },
+  scales: {
+    x: { beginAtZero: true, ticks: { precision: 0 } },
   },
 }
 
@@ -233,10 +295,27 @@ async function loadOvercapacity() {
   } catch {}
 }
 
+async function loadDeductReasons() {
+  try {
+    const data = await statisticsApi.deductReasons({ days: 30 })
+    const colors = ['rgba(239, 68, 68, 0.7)', 'rgba(249, 115, 22, 0.7)', 'rgba(234, 179, 8, 0.7)', 'rgba(16, 185, 129, 0.7)', 'rgba(59, 130, 246, 0.7)']
+    deductReasonData.labels = data.map((d: any) => d.reason)
+    deductReasonData.datasets = [{
+      label: '扣费次数',
+      data: data.map((d: any) => d.count),
+      amountData: data.map((d: any) => d.total_amount),
+      backgroundColor: colors.slice(0, data.length),
+      borderColor: colors.slice(0, data.length).map((c: string) => c.replace('0.7', '1')),
+      borderWidth: 1,
+    }]
+  } catch {}
+}
+
 function loadCharts() {
   loadRoomHeat()
   loadInterception()
   loadOvercapacity()
+  loadDeductReasons()
 }
 
 onMounted(() => {

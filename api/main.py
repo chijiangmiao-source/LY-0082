@@ -17,10 +17,11 @@ from routes_blacklist import routes as blacklist_routes
 from routes_statistics import routes as statistics_routes
 from routes_whitelist import routes as whitelist_routes
 from routes_deposit_items import routes as deposit_items_routes
+from routes_visitor_bills import routes as visitor_bills_routes
 
 logger = logging.getLogger(__name__)
 
-all_routes = auth_routes + floor_routes + room_routes + resident_routes + appointment_routes + visit_routes + blacklist_routes + statistics_routes + whitelist_routes + deposit_items_routes
+all_routes = auth_routes + floor_routes + room_routes + resident_routes + appointment_routes + visit_routes + blacklist_routes + statistics_routes + whitelist_routes + deposit_items_routes + visitor_bills_routes
 
 
 async def startup():

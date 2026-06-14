@@ -118,10 +118,11 @@ export const whitelistApi = {
 }
 
 export const statisticsApi = {
-  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number; pending_deposit_count: number; pending_deposit_amount: number; overdue_item_count: number; abnormal_item_count: number }>('/statistics/dashboard'),
+  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number; pending_deposit_count: number; pending_deposit_amount: number; overdue_item_count: number; abnormal_item_count: number; bill_total_count: number; bill_paid_count: number; bill_settle_rate: number; bill_deduct_count: number; bill_avg_deduct: number; bill_total_deduct: number }>('/statistics/dashboard'),
   roomHeat: (params?: { days?: number }) => get<any[]>('/statistics/room-heat', params),
   interception: (params?: { days?: number }) => get<any[]>('/statistics/interception', params),
   overcapacity: (params?: { days?: number }) => get<any[]>('/statistics/overcapacity', params),
+  deductReasons: (params?: { days?: number }) => get<Array<{ reason: string; count: number; total_amount: number }>>('/statistics/deduct-reasons', params),
 }
 
 export const depositApi = {
@@ -146,4 +147,66 @@ export const depositItemSummaryApi = {
     today_collected_amount: number;
     item_distribution: Array<{ item_type: string; item_name: string; total_count: number; abnormal_count: number }>;
   }>('/deposit-items/summary'),
+}
+
+export interface ChargeItem {
+  id: number;
+  charge_type: string;
+  item_name: string;
+  description: string;
+  amount: number;
+  created_at: string;
+}
+
+export interface ElectronicSignature {
+  signer_name: string;
+  signature_data: string;
+  signed_at: string;
+  sign_device: string;
+}
+
+export interface VisitorBill {
+  id: number;
+  bill_no: string;
+  visit_id: number;
+  appointment_id: number;
+  visitor_name: string;
+  room_number: string;
+  resident_name: string;
+  deposit_amount: number;
+  deposit_refund_amount: number;
+  item_damage_fee: number;
+  item_lost_fee: number;
+  overtime_fee: number;
+  other_fee: number;
+  total_amount: number;
+  actual_paid: number;
+  payment_status: string;
+  signature_status: string;
+  generated_at: string;
+  paid_at: string;
+  remarks: string;
+  operator: string;
+  check_in_time: string;
+  check_out_time: string;
+  charge_items: ChargeItem[];
+  signature: ElectronicSignature | null;
+}
+
+export const billApi = {
+  generate: (data: { visit_id: number; operator?: string }) => post<VisitorBill>('/bills/generate', data),
+  get: (id: number) => get<VisitorBill>(`/bills/${id}`),
+  getByVisit: (visit_id: number) => get<VisitorBill>(`/bills/visit/${visit_id}`),
+  list: (params?: { visitor_name?: string; payment_status?: string; signature_status?: string; bill_no?: string; start_date?: string; end_date?: string }) => get<VisitorBill[]>('/bills', params),
+  pay: (id: number, data: { actual_paid: number; remarks?: string; operator?: string }) => post<VisitorBill>(`/bills/${id}/pay`, data),
+  sign: (id: number, data: { signer_name: string; signature_data: string; sign_device?: string }) => post<VisitorBill>(`/bills/${id}/sign`, data),
+  statistics: (params?: { days?: number }) => get<{
+    total_bills: number;
+    paid_bills: number;
+    settlement_rate: number;
+    deduct_count: number;
+    total_deduct_amount: number;
+    avg_deduct_amount: number;
+    deduct_reason_distribution: Array<{ reason: string; count: number; total_amount: number }>;
+  }>('/bills/statistics', params),
 }
