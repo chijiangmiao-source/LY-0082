@@ -7,9 +7,15 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from database import async_session
-from models import Appointment, Blacklist, Resident, Room, Visit, VisitCode
+from models import Appointment, Blacklist, Resident, Room, Visit, VisitCode, CodeErrorLog
 
 logger = logging.getLogger(__name__)
+
+
+async def log_code_error(session, code: str, error_type: str):
+    log_entry = CodeErrorLog(code=code, error_type=error_type)
+    session.add(log_entry)
+    await session.commit()
 
 
 async def get_by_code(request: Request) -> JSONResponse:
@@ -21,6 +27,7 @@ async def get_by_code(request: Request) -> JSONResponse:
         )
         visit_code = vc_result.scalar_one_or_none()
         if not visit_code:
+            await log_code_error(session, code, "invalid_code")
             return JSONResponse({"detail": "探视码不存在", "error_type": "invalid_code"}, status_code=404)
 
         apt_result = await session.execute(
@@ -28,7 +35,8 @@ async def get_by_code(request: Request) -> JSONResponse:
         )
         appointment = apt_result.scalar_one_or_none()
         if not appointment:
-            return JSONResponse({"detail": "关联预约不存在", "error_type": "invalid_code"}, status_code=404)
+            await log_code_error(session, code, "invalid_appointment")
+            return JSONResponse({"detail": "关联预约不存在", "error_type": "invalid_appointment"}, status_code=404)
 
         res_result = await session.execute(
             select(Resident).where(Resident.id == appointment.resident_id)
@@ -119,9 +127,11 @@ async def checkin_by_code(request: Request) -> JSONResponse:
         )
         visit_code = vc_result.scalar_one_or_none()
         if not visit_code:
+            await log_code_error(session, code, "invalid_code")
             return JSONResponse({"detail": "探视码不存在", "error_type": "invalid_code"}, status_code=400)
 
         if visit_code.is_used:
+            await log_code_error(session, code, "code_used")
             return JSONResponse({"detail": "该探视码已使用", "error_type": "code_used"}, status_code=400)
 
         apt_result = await session.execute(
@@ -129,7 +139,8 @@ async def checkin_by_code(request: Request) -> JSONResponse:
         )
         appointment = apt_result.scalar_one_or_none()
         if not appointment:
-            return JSONResponse({"detail": "关联预约不存在", "error_type": "invalid_code"}, status_code=400)
+            await log_code_error(session, code, "invalid_appointment")
+            return JSONResponse({"detail": "关联预约不存在", "error_type": "invalid_appointment"}, status_code=400)
 
         if appointment.status in ("checked_in", "checked_out", "cancelled", "rejected"):
             return JSONResponse({"detail": f"预约状态为{appointment.status}，无法核验"}, status_code=400)

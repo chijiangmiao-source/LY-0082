@@ -73,7 +73,7 @@ class VisitorWhitelist(Base):
     resident_id: Mapped[int] = mapped_column(Integer, ForeignKey("residents.id"), nullable=False)
     visitor_name: Mapped[str] = mapped_column(String(50), nullable=False)
     visitor_phone: Mapped[str] = mapped_column(String(20), nullable=True)
-    visitor_id_card: Mapped[str] = mapped_column(String(18), nullable=True)
+    visitor_id_card: Mapped[str] = mapped_column(String(18), nullable=False)
     visitor_relation: Mapped[str] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -131,3 +131,15 @@ class Visit(Base):
     appointment: Mapped["Appointment"] = relationship(back_populates="visits")
     room: Mapped["Room"] = relationship()
     visit_code: Mapped["VisitCode"] = relationship()
+
+
+class CodeErrorLog(Base):
+    __tablename__ = "code_error_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_type: Mapped[str] = mapped_column(
+        Enum("invalid_code", "code_used", "invalid_appointment", name="code_error_type"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

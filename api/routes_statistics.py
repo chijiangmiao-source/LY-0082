@@ -93,12 +93,8 @@ async def dashboard(request: Request) -> JSONResponse:
         visit_code_released_count = visit_code_released_result.scalar()
 
         visit_code_rejected_result = await session.execute(
-            select(func.count()).select_from(Visit).where(
-                and_(
-                    Visit.check_in_time >= today_start,
-                    Visit.release_status == "rejected",
-                    Visit.visit_code_id.isnot(None),
-                )
+            select(func.count()).select_from(CodeErrorLog).where(
+                CodeErrorLog.created_at >= today_start,
             )
         )
         visit_code_rejected_count = visit_code_rejected_result.scalar()

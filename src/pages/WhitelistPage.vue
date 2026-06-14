@@ -18,11 +18,7 @@
             <span>{{ data.visitor_phone || '-' }}</span>
           </template>
         </Column>
-        <Column field="visitor_id_card" header="身份证号">
-          <template #body="{ data }">
-            <span>{{ data.visitor_id_card || '-' }}</span>
-          </template>
-        </Column>
+        <Column field="visitor_id_card" header="身份证号" />
         <Column field="created_at" header="添加时间" />
         <Column header="操作" :style="{ width: '140px' }">
           <template #body="{ data }">
@@ -54,8 +50,8 @@
             <small v-if="errors.visitor_phone" class="p-error">{{ errors.visitor_phone }}</small>
           </div>
           <div class="field">
-            <label>访客身份证号</label>
-            <InputText v-model="form.visitor_id_card" placeholder="请输入访客身份证号" :class="{ 'p-invalid': errors.visitor_id_card }" />
+            <label>访客身份证号 <span class="required">*</span></label>
+            <InputText v-model="form.visitor_id_card" placeholder="请输入18位身份证号" :class="{ 'p-invalid': errors.visitor_id_card }" maxlength="18" />
             <small v-if="errors.visitor_id_card" class="p-error">{{ errors.visitor_id_card }}</small>
           </div>
         </div>
@@ -122,7 +118,8 @@ function validate(): boolean {
   if (!f.visitor_name.trim()) errors.visitor_name = '请输入访客姓名'
   if (f.visitor_name.trim().length < 2) errors.visitor_name = '访客姓名至少2个字符'
   if (f.visitor_phone && !/^1[3-9]\d{9}$/.test(f.visitor_phone.trim())) errors.visitor_phone = '手机号格式不正确'
-  if (f.visitor_id_card && !/(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/.test(f.visitor_id_card.trim())) errors.visitor_id_card = '身份证号格式不正确'
+  if (!f.visitor_id_card.trim()) errors.visitor_id_card = '请输入身份证号'
+  else if (!/^\d{17}(\d|X|x)$/.test(f.visitor_id_card.trim())) errors.visitor_id_card = '请输入有效的18位身份证号'
   return Object.keys(errors).length === 0
 }
 
@@ -164,7 +161,7 @@ async function handleSave() {
       resident_id: form.value.resident_id!,
       visitor_name: form.value.visitor_name,
       visitor_phone: form.value.visitor_phone || undefined,
-      visitor_id_card: form.value.visitor_id_card || undefined,
+      visitor_id_card: form.value.visitor_id_card.trim(),
       visitor_relation: form.value.visitor_relation || undefined,
     }
     if (form.value.id) {

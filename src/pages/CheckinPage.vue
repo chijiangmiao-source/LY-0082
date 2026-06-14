@@ -25,6 +25,7 @@
               @keyup.enter="handleCodeQuery"
               maxlength="8"
             />
+            <Button label="扫码" icon="pi pi-camera" @click="openScanner" class="scan-btn" :disabled="scannerActive" />
             <Button label="查询" icon="pi pi-search" @click="handleCodeQuery" />
           </div>
           <div class="code-input-hint">探视码为8位大写字母数字组合，审核通过后由系统生成</div>
@@ -170,18 +171,39 @@
           <Button label="确认拒绝" severity="danger" @click="handleReject" :disabled="rejectReason.trim().length < 2 || rejectReason.trim().length > 200" />
         </template>
       </Dialog>
+
+      <Dialog v-model:visible="scannerDialogVisible" header="扫描探视码" :modal="true" :style="{ width: '500px' }" @hide="stopScanner">
+        <div class="scanner-container">
+          <div v-if="scannerError" class="scanner-error">
+            <Camera :size="28" color="#E74C3C" />
+            <span>{{ scannerError }}</span>
+          </div>
+          <div v-else id="qr-reader" class="qr-reader"></div>
+          <div v-if="scannerActive && !scannerError" class="scanner-hint">
+            <ScanLine :size="16" />
+            <span>将二维码放入扫描框内，保持光线充足</span>
+          </div>
+        </div>
+        <template #footer>
+          <div class="scanner-footer">
+            <Button label="切换摄像头" icon="pi pi-sync" @click="switchCamera" :disabled="!scannerActive" />
+            <Button label="关闭" severity="secondary" @click="stopScanner" />
+          </div>
+        </template>
+      </Dialog>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { appointmentApi, visitApi } from '@/api'
-import { AlertTriangle, Search, QrCode } from 'lucide-vue-next'
+import { AlertTriangle, Search, QrCode, Camera, ScanLine } from 'lucide-vue-next'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+import { Html5Qrcode } from 'html5-qrcode'
 
 const activeTab = ref<'code' | 'search'>('code')
 const codeInput = ref('')
@@ -197,6 +219,13 @@ const rejectReason = ref('')
 const rejectError = ref('')
 const currentApt = ref<any>(null)
 const rejectMode = ref<'code' | 'normal'>('normal')
+
+const scannerDialogVisible = ref(false)
+const scannerActive = ref(false)
+const scannerError = ref('')
+let html5QrCode: Html5Qrcode | null = null
+let currentCameraId: string | null = null
+let camerasList: string[] = []
 
 function statusLabel(status: string) {
   const map: Record<string, string> = { pending: '待审核', approved: '已通过', checked_in: '已签到', checked_out: '已签退', cancelled: '已取消', rejected: '已拒绝' }
@@ -321,6 +350,99 @@ async function handleReject() {
     alert(e.message || '操作失败')
   }
 }
+
+async function openScanner() {
+  scannerDialogVisible.value = true
+  scannerError.value = ''
+  try {
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode('qr-reader')
+    }
+    const devices = await Html5Qrcode.getCameras()
+    if (!devices || devices.length === 0) {
+      scannerError.value = '未检测到摄像头设备，请检查权限设置'
+      return
+    }
+    camerasList = devices.map((d: any) => d.id)
+    currentCameraId = camerasList[0]
+    await startScanner()
+  } catch (e: any) {
+    console.error('Camera init error:', e)
+    scannerError.value = '无法访问摄像头，请检查浏览器权限设置'
+  }
+}
+
+async function startScanner() {
+  if (!html5QrCode || !currentCameraId) return
+  scannerActive.value = true
+  try {
+    await html5QrCode.start(
+      { deviceId: { exact: currentCameraId } },
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0,
+      },
+      (decodedText: string) => {
+        handleScanSuccess(decodedText)
+      },
+      (errorMessage: string) => {
+        console.log('Scan error:', errorMessage)
+      }
+    )
+  } catch (e: any) {
+    console.error('Scanner start error:', e)
+    scannerError.value = '摄像头启动失败，请重试'
+    scannerActive.value = false
+  }
+}
+
+async function stopScanner() {
+  if (html5QrCode && scannerActive.value) {
+    try {
+      await html5QrCode.stop()
+    } catch (e) {
+      console.error('Scanner stop error:', e)
+    }
+  }
+  scannerActive.value = false
+  scannerDialogVisible.value = false
+  scannerError.value = ''
+}
+
+async function switchCamera() {
+  if (!html5QrCode || camerasList.length < 2) {
+    alert('只有一个摄像头可用')
+    return
+  }
+  try {
+    await html5QrCode.stop()
+    const currentIndex = camerasList.indexOf(currentCameraId!)
+    const nextIndex = (currentIndex + 1) % camerasList.length
+    currentCameraId = camerasList[nextIndex]
+    await startScanner()
+  } catch (e: any) {
+    console.error('Switch camera error:', e)
+    scannerError.value = '切换摄像头失败'
+  }
+}
+
+function handleScanSuccess(decodedText: string) {
+  const code = decodedText.trim().toUpperCase()
+  if (/^[A-Z0-9]{8}$/.test(code)) {
+    codeInput.value = code
+    stopScanner()
+    setTimeout(() => {
+      handleCodeQuery()
+    }, 300)
+  } else {
+    alert(`扫描成功，但内容不是有效的探视码格式：\n\n${decodedText}`)
+  }
+}
+
+onUnmounted(() => {
+  stopScanner()
+})
 </script>
 
 <style scoped>
@@ -390,6 +512,7 @@ async function handleReject() {
   gap: 12px;
   justify-content: center;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .code-input {
@@ -398,6 +521,11 @@ async function handleReject() {
   font-size: 16px;
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+
+.scan-btn {
+  background: linear-gradient(135deg, #8B5CF6, #7C3AED) !important;
+  border: none !important;
 }
 
 .code-input-hint {
@@ -654,5 +782,51 @@ async function handleReject() {
 .char-count.count-warning {
   color: #E74C3C;
   font-weight: 500;
+}
+
+.scanner-container {
+  padding: 16px 0;
+}
+
+.qr-reader {
+  width: 100%;
+  min-height: 300px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+
+.qr-reader :deep(video) {
+  border-radius: 8px;
+}
+
+.scanner-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: #E74C3C;
+  text-align: center;
+  background: #FEF2F2;
+  border-radius: 8px;
+  min-height: 300px;
+}
+
+.scanner-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: #666;
+  font-size: 13px;
+}
+
+.scanner-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
 }
 </style>

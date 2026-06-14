@@ -56,33 +56,47 @@ async def add_whitelist(request: Request) -> JSONResponse:
     body = await request.json()
     resident_id = body.get("resident_id")
     visitor_name = body.get("visitor_name", "").strip()
+    visitor_id_card = body.get("visitor_id_card", "").strip()
+    visitor_phone = body.get("visitor_phone", "").strip()
 
     if not resident_id:
         return JSONResponse({"detail": "请选择住户"}, status_code=400)
     if not visitor_name:
         return JSONResponse({"detail": "请输入访客姓名"}, status_code=400)
+    if not visitor_id_card:
+        return JSONResponse({"detail": "请输入身份证号"}, status_code=400)
+    if len(visitor_id_card) != 18:
+        return JSONResponse({"detail": "身份证号必须为18位"}, status_code=400)
 
     async with async_session() as session:
         res_result = await session.execute(select(Resident).where(Resident.id == resident_id))
         if not res_result.scalar_one_or_none():
             return JSONResponse({"detail": "住户不存在"}, status_code=400)
 
-        visitor_id_card = body.get("visitor_id_card", "").strip()
-        if visitor_id_card:
-            existing = await session.execute(
+        existing_by_id_card = await session.execute(
+            select(VisitorWhitelist).where(
+                VisitorWhitelist.resident_id == resident_id,
+                VisitorWhitelist.visitor_id_card == visitor_id_card,
+            )
+        )
+        if existing_by_id_card.scalar_one_or_none():
+            return JSONResponse({"detail": "该身份证号已在住户的白名单中"}, status_code=400)
+
+        if visitor_phone:
+            existing_by_phone = await session.execute(
                 select(VisitorWhitelist).where(
                     VisitorWhitelist.resident_id == resident_id,
-                    VisitorWhitelist.visitor_id_card == visitor_id_card,
+                    VisitorWhitelist.visitor_phone == visitor_phone,
                 )
             )
-            if existing.scalar_one_or_none():
-                return JSONResponse({"detail": "该访客已在住户的白名单中"}, status_code=400)
+            if existing_by_phone.scalar_one_or_none():
+                return JSONResponse({"detail": "该手机号已在住户的白名单中"}, status_code=400)
 
         entry = VisitorWhitelist(
             resident_id=resident_id,
             visitor_name=visitor_name,
-            visitor_phone=body.get("visitor_phone"),
-            visitor_id_card=visitor_id_card or None,
+            visitor_phone=visitor_phone or None,
+            visitor_id_card=visitor_id_card,
             visitor_relation=body.get("visitor_relation"),
         )
         session.add(entry)
@@ -110,12 +124,44 @@ async def update_whitelist(request: Request) -> JSONResponse:
         if not entry:
             return JSONResponse({"detail": "白名单记录不存在"}, status_code=404)
 
+        visitor_id_card = body.get("visitor_id_card", entry.visitor_id_card)
+        if visitor_id_card is not None:
+            visitor_id_card = visitor_id_card.strip()
+            if not visitor_id_card:
+                return JSONResponse({"detail": "身份证号不能为空"}, status_code=400)
+            if len(visitor_id_card) != 18:
+                return JSONResponse({"detail": "身份证号必须为18位"}, status_code=400)
+
+            existing_by_id_card = await session.execute(
+                select(VisitorWhitelist).where(
+                    VisitorWhitelist.resident_id == entry.resident_id,
+                    VisitorWhitelist.visitor_id_card == visitor_id_card,
+                    VisitorWhitelist.id != entry_id,
+                )
+            )
+            if existing_by_id_card.scalar_one_or_none():
+                return JSONResponse({"detail": "该身份证号已在住户的白名单中"}, status_code=400)
+
+        visitor_phone = body.get("visitor_phone", entry.visitor_phone)
+        if visitor_phone is not None:
+            visitor_phone = visitor_phone.strip() if visitor_phone else None
+            if visitor_phone:
+                existing_by_phone = await session.execute(
+                    select(VisitorWhitelist).where(
+                        VisitorWhitelist.resident_id == entry.resident_id,
+                        VisitorWhitelist.visitor_phone == visitor_phone,
+                        VisitorWhitelist.id != entry_id,
+                    )
+                )
+                if existing_by_phone.scalar_one_or_none():
+                    return JSONResponse({"detail": "该手机号已在住户的白名单中"}, status_code=400)
+
         if "visitor_name" in body:
             entry.visitor_name = body["visitor_name"]
         if "visitor_phone" in body:
-            entry.visitor_phone = body["visitor_phone"]
+            entry.visitor_phone = visitor_phone
         if "visitor_id_card" in body:
-            entry.visitor_id_card = body["visitor_id_card"]
+            entry.visitor_id_card = visitor_id_card
         if "visitor_relation" in body:
             entry.visitor_relation = body["visitor_relation"]
 
