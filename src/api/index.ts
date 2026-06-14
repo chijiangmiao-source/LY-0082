@@ -118,7 +118,7 @@ export const whitelistApi = {
 }
 
 export const statisticsApi = {
-  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number; pending_deposit_count: number; overdue_item_count: number; abnormal_item_count: number }>('/statistics/dashboard'),
+  dashboard: () => get<{ today_visits: number; active_visitors: number; interception_count: number; overcapacity_count: number; whitelist_visit_count: number; whitelist_ratio: number; visit_code_released_count: number; visit_code_rejected_count: number; pending_deposit_count: number; pending_deposit_amount: number; overdue_item_count: number; abnormal_item_count: number }>('/statistics/dashboard'),
   roomHeat: (params?: { days?: number }) => get<any[]>('/statistics/room-heat', params),
   interception: (params?: { days?: number }) => get<any[]>('/statistics/interception', params),
   overcapacity: (params?: { days?: number }) => get<any[]>('/statistics/overcapacity', params),

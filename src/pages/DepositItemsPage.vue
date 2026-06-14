@@ -230,6 +230,7 @@
               </div>
             </div>
             <div v-else-if="aptSearched" class="empty-text">未找到相关预约</div>
+            <div v-else class="empty-text hint">请先搜索并选择关联预约（必填）</div>
           </div>
 
           <div class="field-row">
@@ -274,6 +275,7 @@
             <label>实际退还金额 (元) <span class="required">*</span></label>
             <InputNumber v-model="settleForm.refund_amount" :min="0" :max="Number(currentDeposit.amount)" :precision="2" prefix="¥" />
             <small class="form-hint">扣费金额 = ¥{{ Number(currentDeposit.amount).toFixed(2) }} - 退还金额</small>
+            <small v-if="settleFormError" class="form-error">{{ settleFormError }}</small>
           </div>
 
           <div v-if="settleForm.action === 'partial_refund' || settleForm.action === 'deduct'" class="field">
@@ -311,6 +313,7 @@
               </div>
             </div>
             <div v-else-if="itemAptSearched" class="empty-text">未找到相关预约</div>
+            <div v-else class="empty-text hint">请先搜索并选择关联预约（必填）</div>
           </div>
 
           <div class="field-row">
@@ -557,6 +560,7 @@ const depositForm = reactive({
 
 const canSubmitDeposit = computed(() => {
   return (
+    !!selectedApt.value &&
     depositForm.visitor_name.trim().length >= 2 &&
     depositForm.amount > 0
   )
@@ -597,10 +601,14 @@ function selectAptForDeposit(apt: any) {
 
 async function submitDeposit() {
   if (!canSubmitDeposit.value) return
+  if (!selectedApt.value) {
+    alert('请先搜索并选择关联的预约')
+    return
+  }
   try {
     await depositApi.create({
-      appointment_id: selectedApt.value?.id,
-      visit_id: selectedApt.value?.visit_id,
+      appointment_id: selectedApt.value.id,
+      visit_id: selectedApt.value.visit_id,
       visitor_name: depositForm.visitor_name.trim(),
       amount: Number(depositForm.amount),
     })
@@ -628,9 +636,12 @@ const settleActionOptions = [
 const canSubmitSettle = computed(() => {
   if (settleForm.action === 'refund') return true
   if (settleForm.action === 'partial_refund') {
+    const refAmt = Number(settleForm.refund_amount)
+    const total = Number(currentDeposit.value?.amount || 0)
     return (
-      settleForm.refund_amount >= 0 &&
-      settleForm.refund_amount < Number(currentDeposit.value?.amount || 0) &&
+      !isNaN(refAmt) &&
+      refAmt > 0 &&
+      refAmt < total &&
       settleForm.deduct_reason.trim().length >= 2
     )
   }
@@ -638,6 +649,17 @@ const canSubmitSettle = computed(() => {
     return settleForm.deduct_reason.trim().length >= 2
   }
   return false
+})
+
+const settleFormError = computed(() => {
+  if (settleForm.action !== 'partial_refund' || !currentDeposit.value) return ''
+  const refAmt = Number(settleForm.refund_amount)
+  const total = Number(currentDeposit.value.amount)
+  if (isNaN(refAmt)) return '请输入有效的退款金额'
+  if (refAmt < 0) return '退款金额不能为负数'
+  if (refAmt === 0) return '退款金额必须大于 0，否则请选择「全额扣费」'
+  if (refAmt >= total) return '部分退款金额必须小于押金总额，否则请选择「全额退还」'
+  return ''
 })
 
 function openSettleDialog(deposit: any, mode: string) {
@@ -657,6 +679,10 @@ function resetSettleForm() {
 
 async function submitSettle() {
   if (!canSubmitSettle.value || !currentDeposit.value) return
+  if (settleForm.action === 'partial_refund' && settleFormError.value) {
+    alert(settleFormError.value)
+    return
+  }
   try {
     await depositApi.settle(currentDeposit.value.id, {
       action: settleForm.action,
@@ -687,6 +713,7 @@ const itemForm = reactive({
 
 const canSubmitItem = computed(() => {
   return (
+    !!itemSelectedApt.value &&
     itemForm.visitor_name.trim().length >= 2 &&
     itemForm.item_type &&
     itemForm.item_name.trim()
@@ -746,13 +773,17 @@ function selectAptForItem(apt: any) {
 
 async function submitItem() {
   if (!canSubmitItem.value) return
+  if (!itemSelectedApt.value) {
+    alert('请先搜索并选择关联的预约')
+    return
+  }
   try {
     let dueStr: string | undefined
     if (itemForm.due_return_at) {
       dueStr = itemForm.due_return_at.toISOString()
     }
     await itemLoanApi.create({
-      appointment_id: itemSelectedApt.value?.id,
+      appointment_id: itemSelectedApt.value.id,
       visit_id: itemSelectedApt.value?.visit_id,
       visitor_name: itemForm.visitor_name.trim(),
       item_type: itemForm.item_type,
@@ -1268,6 +1299,23 @@ onMounted(refreshAll)
   margin-top: 4px;
   font-size: 11.5px;
   color: #6B7280;
+}
+
+.form-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #DC2626;
+  font-weight: 500;
+}
+
+.empty-text.hint {
+  color: #9CA3AF;
+  font-style: italic;
+  background: #FFFBEB;
+  border-radius: 6px;
+  border: 1px dashed #FCD34D;
+  padding: 10px;
 }
 
 .settle-info {

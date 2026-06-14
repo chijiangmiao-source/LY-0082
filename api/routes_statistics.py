@@ -106,6 +106,13 @@ async def dashboard(request: Request) -> JSONResponse:
         )
         pending_deposit_count = pending_deposit_result.scalar()
 
+        pending_deposit_amount_result = await session.execute(
+            select(func.coalesce(func.sum(DepositRecord.amount), 0)).select_from(DepositRecord).where(
+                DepositRecord.status == "collected"
+            )
+        )
+        pending_deposit_amount = pending_deposit_amount_result.scalar() or 0
+
         overdue_items_result = await session.execute(
             select(func.count()).select_from(ItemLoanRecord).where(
                 or_(
@@ -137,6 +144,7 @@ async def dashboard(request: Request) -> JSONResponse:
         "visit_code_released_count": visit_code_released_count,
         "visit_code_rejected_count": visit_code_rejected_count,
         "pending_deposit_count": pending_deposit_count,
+        "pending_deposit_amount": float(pending_deposit_amount),
         "overdue_item_count": overdue_item_count,
         "abnormal_item_count": abnormal_item_count,
     })

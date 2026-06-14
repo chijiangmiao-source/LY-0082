@@ -88,16 +88,31 @@ async def deposit_create(request: Request) -> JSONResponse:
     appointment_id = data.get("appointment_id")
     visit_id = data.get("visit_id")
     visitor_name = data.get("visitor_name")
-    amount = float(data.get("amount", 0))
+    amount = data.get("amount", 0)
 
-    if not appointment_id or not visitor_name or amount <= 0:
-        return JSONResponse({"detail": "参数不完整"}, status_code=400)
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return JSONResponse({"detail": "押金金额格式不正确"}, status_code=400)
+
+    if not appointment_id:
+        return JSONResponse({"detail": "必须关联预约"}, status_code=400)
+    if not visitor_name or len(visitor_name.strip()) < 2:
+        return JSONResponse({"detail": "访客姓名不能为空且至少2个字符"}, status_code=400)
+    if amount <= 0:
+        return JSONResponse({"detail": "押金金额必须大于0"}, status_code=400)
 
     async with async_session() as session:
+        apt_stmt = select(Appointment).where(Appointment.id == int(appointment_id))
+        apt_result = await session.execute(apt_stmt)
+        apt = apt_result.scalar_one_or_none()
+        if not apt:
+            return JSONResponse({"detail": "关联的预约不存在"}, status_code=400)
+
         record = DepositRecord(
-            appointment_id=appointment_id,
+            appointment_id=int(appointment_id),
             visit_id=visit_id,
-            visitor_name=visitor_name,
+            visitor_name=visitor_name.strip(),
             amount=amount,
             status="collected",
             operator=operator,
@@ -139,18 +154,27 @@ async def deposit_settle(request: Request) -> JSONResponse:
         elif action == "partial_refund":
             if refund_amount is None:
                 return JSONResponse({"detail": "请提供退款金额"}, status_code=400)
-            refund_amount = float(refund_amount)
+            try:
+                refund_amount = float(refund_amount)
+            except (TypeError, ValueError):
+                return JSONResponse({"detail": "退款金额格式不正确"}, status_code=400)
+            if refund_amount < 0:
+                return JSONResponse({"detail": "退款金额不能为负数"}, status_code=400)
+            if refund_amount >= record.amount:
+                return JSONResponse({"detail": "部分退款金额必须小于押金总额，请使用「全额退还」或调整金额"}, status_code=400)
+            if not deduct_reason or len(deduct_reason.strip()) < 2:
+                return JSONResponse({"detail": "请填写扣费原因（至少2个字符）"}, status_code=400)
             record.status = "partial_refunded"
             record.refund_amount = refund_amount
             record.deduct_amount = record.amount - refund_amount
-            record.deduct_reason = deduct_reason
+            record.deduct_reason = deduct_reason.strip()
         elif action == "deduct":
             if deduct_reason is None or deduct_reason.strip() == "":
                 return JSONResponse({"detail": "请提供扣费原因"}, status_code=400)
             record.status = "deducted"
             record.refund_amount = 0
             record.deduct_amount = record.amount
-            record.deduct_reason = deduct_reason
+            record.deduct_reason = deduct_reason.strip()
 
         record.refunded_at = now
         record.operator = operator or record.operator
@@ -251,14 +275,26 @@ async def item_create(request: Request) -> JSONResponse:
     item_identifier = data.get("item_identifier")
     due_return_at = data.get("due_return_at")
 
-    if not appointment_id or not visitor_name or not item_type or not item_name:
-        return JSONResponse({"detail": "参数不完整"}, status_code=400)
+    if not appointment_id:
+        return JSONResponse({"detail": "必须关联预约"}, status_code=400)
+    if not visitor_name or len(visitor_name.strip()) < 2:
+        return JSONResponse({"detail": "访客姓名不能为空且至少2个字符"}, status_code=400)
+    if not item_type:
+        return JSONResponse({"detail": "请选择物品类型"}, status_code=400)
+    if not item_name or len(item_name.strip()) < 1:
+        return JSONResponse({"detail": "请填写物品名称"}, status_code=400)
 
     valid_types = {"temporary_id", "escort_clothes", "locker_key", "escort_bed", "other"}
     if item_type not in valid_types:
         return JSONResponse({"detail": "无效的物品类型"}, status_code=400)
 
     async with async_session() as session:
+        apt_stmt = select(Appointment).where(Appointment.id == int(appointment_id))
+        apt_result = await session.execute(apt_stmt)
+        apt = apt_result.scalar_one_or_none()
+        if not apt:
+            return JSONResponse({"detail": "关联的预约不存在"}, status_code=400)
+
         due = None
         if due_return_at:
             try:
@@ -267,12 +303,12 @@ async def item_create(request: Request) -> JSONResponse:
                 pass
 
         record = ItemLoanRecord(
-            appointment_id=appointment_id,
+            appointment_id=int(appointment_id),
             visit_id=visit_id,
-            visitor_name=visitor_name,
+            visitor_name=visitor_name.strip(),
             item_type=item_type,
-            item_name=item_name,
-            item_identifier=item_identifier,
+            item_name=item_name.strip(),
+            item_identifier=item_identifier.strip() if item_identifier else None,
             status="loaned",
             due_return_at=due,
             operator=operator,

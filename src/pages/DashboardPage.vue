@@ -76,8 +76,9 @@
             <Wallet :size="28" color="white" />
           </div>
           <div class="stat-info">
-            <div class="stat-number">{{ stats.pending_deposit_count }}</div>
-            <div class="stat-label">押金未退笔数</div>
+            <div class="stat-number">{{ stats.pending_deposit_count }}<span class="stat-unit">笔</span></div>
+            <div class="stat-label">押金未退</div>
+            <div class="stat-sub">¥{{ Number(stats.pending_deposit_amount || 0).toFixed(2) }}</div>
           </div>
         </div>
         <div class="stat-card" style="background: linear-gradient(135deg, #EF4444, #DC2626)">
@@ -157,6 +158,7 @@ const stats = ref({
   visit_code_released_count: 0,
   visit_code_rejected_count: 0,
   pending_deposit_count: 0,
+  pending_deposit_amount: 0,
   overdue_item_count: 0,
   abnormal_item_count: 0,
 })
@@ -304,10 +306,24 @@ onMounted(() => {
   line-height: 1.2;
 }
 
+.stat-unit {
+  font-size: 14px;
+  font-weight: 500;
+  margin-left: 6px;
+  opacity: 0.9;
+}
+
 .stat-label {
   font-size: 13px;
   opacity: 0.9;
   margin-top: 4px;
+}
+
+.stat-sub {
+  font-size: 12px;
+  opacity: 0.9;
+  margin-top: 2px;
+  font-weight: 500;
 }
 
 .charts-grid {
